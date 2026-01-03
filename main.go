@@ -16,8 +16,8 @@ func main() {
 	defer rl.CloseWindow()
 
 	a := CreateBox(200, 100, 150, 150)
-	b := CreateBox(250, 240, 150, 150)
-	//b.rotate(-0.1)
+	b := CreateBox(200, 250, 150, 150)
+	b.rotate(-0.5)
 
 	//fmt.Println(detectCollBox(a, b))
 	isColliding, mtv, contacts := SATCollision(a.vertices[:], b.vertices[:])
@@ -68,67 +68,6 @@ func (box *Box) rotate(angle float32) {
 		rotatedPos := rl.Vector2Rotate(relativePos, angle)
 		box.vertices[i] = rl.Vector2Add(rotatedPos, box.location)
 	}
-}
-func intersectLine(start_a, end_a, start_b, end_b rl.Vector2) (distance float32, point rl.Vector2) {
-	// line a und line b sind die beiden Geraden, welche auf Überschneidung getestet werden
-	// s ist der Faktor für die Linie von start_a zum Überscheindungspunkt
-	// u ist der Faktor die Linie von start_b zum Überschneidungspunkt
-	// Überscheindungspunkt = Vector start_a zuzüglich Vector line_a mit s skaliert oder
-	// Vector start_b zuzüglich Vector line_b mit u skaliert
-
-	line_a := rl.Vector2Subtract(end_a, start_a)
-	line_b := rl.Vector2Subtract(end_b, start_b)
-	cross1 := rl.Vector2CrossProduct(line_a, line_b)
-	cross2 := rl.Vector2CrossProduct(line_b, line_a)
-	if math.Abs(float64(cross1)) > 0.01 { //Float kann man nicht direkt auf 0 testen!!!
-		s := rl.Vector2CrossProduct(rl.Vector2Subtract(start_b, start_a), line_b) / cross1
-		u := rl.Vector2CrossProduct(rl.Vector2Subtract(start_a, start_b), line_a) / cross2
-		if s > 0.0001 && s < 1 && u > 0.0001 && u < 1 {
-			return s, rl.Vector2Add(start_a, rl.Vector2Scale(line_a, s))
-		}
-	}
-	return 0, rl.Vector2{0, 0}
-}
-
-func detectCollBox(boxA Box, boxB Box) (isCollision bool, collisionPoint rl.Vector2, normal rl.Vector2) {
-	// Geprüft wird, ob eine Ecke von boxA in die Kante von boxB schneidet
-	// Zusätzlich muss die Linie von Mittelpunkt boxA und Mittelpunkt boxB durch Kante von boxB gehen
-	// i ist Index von Ecke und j ist Index von Kante
-	// d = Diagonale von A.Mittelpunkt zu A.vertices(i)
-	// e = Kante von B(j) zu B(j+1)%countVerticesB
-	// z = Linie von A.Mittelpunkt zu B.Mittelpunkt
-	// _perp = Perpendicularvektor
-	// scalar_d Faktor von d für den Schnittpunkt d/e
-	// scalar_z Faktor von z für den Schnittpunkt z/e
-	// mtv = minimal translation vector (überlappender Teil von d zur Kante e)
-	countVerticesA := len(boxA.vertices)
-	countVerticesB := len(boxB.vertices)
-	for i := range countVerticesA {
-		for j := range countVerticesB {
-			// Prüfung auf intersection von Diagonale d zu Kante e
-			dist_d, _ := intersectLine(boxA.location, boxA.vertices[i], boxB.vertices[j], boxB.vertices[(j+1)%countVerticesB])
-			if dist_d > 0.01 {
-				// Prüfung auf intersection Linie z zu Kante e
-				dist_z, _ := intersectLine(boxA.location, boxB.location, boxB.vertices[j], boxB.vertices[(j+1)%countVerticesB])
-				if dist_z > 0.01 {
-					// Collision findet statt
-					// Objekte zurücksetzen und normal_e berechnen. Kollisionspunkt ist Ecke i von BoxA
-					e := rl.Vector2Subtract(boxB.vertices[(j+1)%countVerticesB], boxB.vertices[j])
-					e_perp := rl.Vector2{-(e.Y), e.X}
-					d := rl.Vector2Subtract(boxA.vertices[i], boxA.location)
-					d = rl.Vector2Scale(d, 1-dist_d)
-					e_perp = rl.Vector2Normalize(e_perp)
-					distance := rl.Vector2DotProduct(e_perp, d)
-					e_perp = rl.Vector2Scale(e_perp, -distance) //mtv
-					//shapeResetPos(boxA, vec2_scale(e_perp, 0.5f));
-					//shapeResetPos(boxB, vec2_scale(e_perp, -0.5f));
-					e_perp = rl.Vector2Normalize(e_perp) // normal_e
-					return true, boxA.vertices[i], e_perp
-				}
-			}
-		}
-	}
-	return false, rl.Vector2{0, 0}, rl.Vector2{0, 0}
 }
 
 // Projektionsbereich auf einer Achse
@@ -234,9 +173,114 @@ func SATCollision(polyA, polyB []rl.Vector2) (bool, rl.Vector2, []rl.Vector2) {
 		}
 	}
 
-	//mtv := rl.Vector2Scale(rl.Vector2Normalize(smallestAxis), smallestOverlap)
 	mtv := rl.Vector2Scale(smallestAxis, smallestOverlap)
-	contacts := findContactPoints(polyA, polyB)
+
+	rawContacts := findContactPointsSimplified(polyA, polyB)
+
+	contacts := transferContactsToA(rawContacts, polyA, rl.Vector2Scale(rl.Vector2Normalize(smallestAxis), -1))
+
+	//contacts := findContactPointsSimplified(polyA, polyB)
 
 	return true, mtv, contacts
+}
+
+func pointInPolygon(point rl.Vector2, polygon []rl.Vector2) bool {
+	n := len(polygon)
+	for i := range n {
+		edge := rl.Vector2Subtract(polygon[(i+1)%n], polygon[i])
+		edge_perp := rl.Vector2{-edge.Y, edge.X}
+		toPoint := rl.Vector2Subtract(point, polygon[i])
+
+		if rl.Vector2DotProduct(edge_perp, toPoint) < 0 {
+			return false
+		}
+	}
+	return true
+}
+
+func findContactPointsSimplified(polyA, polyB []rl.Vector2) []rl.Vector2 {
+	contacts := []rl.Vector2{}
+
+	// 1. Checke, welche Ecken von A in B liegen
+	for _, p := range polyA {
+		if pointInPolygon(p, polyB) {
+			contacts = append(contacts, p)
+		}
+	}
+
+	// 2. Checke, welche Ecken von B in A liegen
+
+	for _, p := range polyB {
+		if pointInPolygon(p, polyA) {
+			contacts = append(contacts, p)
+		}
+	}
+
+	// 3. Falls keine Ecken drin liegen (z.B. flache Berührung),
+	// nutze deine alten Kantenschnitte als Backup
+	if len(contacts) == 0 {
+		for i := range polyA {
+			a1, a2 := polyA[i], polyA[(i+1)%len(polyA)]
+			for j := range polyB {
+				b1, b2 := polyB[j], polyB[(j+1)%len(polyB)]
+				_, pt, ok := lineIntersect(a1, a2, b1, b2)
+				if ok {
+					contacts = append(contacts, pt)
+				}
+			}
+		}
+	}
+
+	return contacts
+}
+
+func findReferenceEdge(poly []rl.Vector2, normal rl.Vector2) (p1, p2 rl.Vector2) {
+	bestDot := float32(-math.MaxFloat32)
+
+	for i := range poly {
+		a := poly[i]
+		b := poly[(i+1)%len(poly)]
+
+		edge := rl.Vector2Normalize(rl.Vector2Subtract(b, a))
+		edgeNormal := rl.Vector2{-edge.Y, edge.X}
+
+		d := rl.Vector2DotProduct(edgeNormal, normal)
+		if d > bestDot {
+			bestDot = d
+			p1 = a
+			p2 = b
+		}
+	}
+	return
+}
+
+func projectPointOntoEdge(p, a, b rl.Vector2) rl.Vector2 {
+	ab := rl.Vector2Subtract(b, a)
+	t := rl.Vector2DotProduct(rl.Vector2Subtract(p, a), ab) /
+		rl.Vector2DotProduct(ab, ab)
+
+	// Clamp auf Segment
+	if t < 0 {
+		t = 0
+	} else if t > 1 {
+		t = 1
+	}
+
+	return rl.Vector2Add(a, rl.Vector2Scale(ab, t))
+}
+
+func transferContactsToA(
+	contacts []rl.Vector2,
+	polyA []rl.Vector2,
+	normal rl.Vector2,
+) []rl.Vector2 {
+
+	refA, refB := findReferenceEdge(polyA, normal)
+
+	projected := []rl.Vector2{}
+	for _, c := range contacts {
+		p := projectPointOntoEdge(c, refA, refB)
+		projected = append(projected, p)
+	}
+	return projected
 }
