@@ -7,20 +7,27 @@ import (
 )
 
 func main() {
+
 	screenWidth := int32(1200)
 	screenHeight := int32(800)
-	rl.SetConfigFlags(rl.FlagVsyncHint)
+	rl.SetConfigFlags(rl.FlagVsyncHint) // rl.FlagFullscreenMode |
 	rl.InitWindow(screenWidth, screenHeight, "Physics - raylib-go")
 	defer rl.CloseWindow()
 
 	a := CreateBox(200, 100, 150, 150)
 	b := CreateBox(250, 270, 120, 150)
+	//a.rotate(-0.5)
+
+	//isColliding, mtv, contacts := SATCollision(a.vertices[:], b.vertices[:])
+	//fmt.Println(isColliding, mtv, contacts)
 
 	for !rl.WindowShouldClose() {
+
 		rl.BeginDrawing()
 		rl.ClearBackground(rl.DarkBlue)
 
 		_, mtv, contacts := SATCollision(a, b)
+		//fmt.Println(contacts)
 
 		a.FollowMouse()
 		a.Draw(rl.Red, 3)
@@ -58,9 +65,8 @@ type BasicShape struct {
 }
 
 type Polygon struct {
-	basic         BasicShape
-	vertices      []rl.Vector2
-	verticesCount int
+	basic    BasicShape
+	vertices []rl.Vector2
 }
 
 type Circle struct {
@@ -70,24 +76,24 @@ type Circle struct {
 }
 
 func CreateBox(x float32, y float32, w float32, h float32) Polygon {
-	vertices := []rl.Vector2{{x, y}, {x + w, y}, {x + w, y + h}, {x, y + h}}
 	box := Polygon{
-		basic:         BasicShape{typ: PolygonShape, location: rl.Vector2{x + w/2, y + h/2}},
-		vertices:      vertices,
-		verticesCount: 4,
+		basic:    BasicShape{typ: PolygonShape, location: rl.Vector2{x + w/2, y + h/2}},
+		vertices: []rl.Vector2{{x, y}, {x + w, y}, {x + w, y + h}, {x, y + h}},
 	}
 	return box
 }
 
 func (poly Polygon) Draw(c rl.Color, thick float32) {
-	for i := range poly.verticesCount {
-		rl.DrawLineEx(poly.vertices[i], poly.vertices[(i+1)%poly.verticesCount], thick, c)
+	n := len(poly.vertices)
+	for i := range poly.vertices {
+		rl.DrawLineEx(poly.vertices[i], poly.vertices[(i+1)%n], thick, c)
 	}
 	rl.DrawCircleV(poly.basic.location, 5, c)
 }
 
 func (poly *Polygon) rotate(angle float32) {
-	for i := range poly.verticesCount {
+
+	for i := range poly.vertices {
 		relativePos := rl.Vector2Subtract(poly.vertices[i], poly.basic.location)
 		rotatedPos := rl.Vector2Rotate(relativePos, angle)
 		poly.vertices[i] = rl.Vector2Add(rotatedPos, poly.basic.location)
@@ -96,19 +102,24 @@ func (poly *Polygon) rotate(angle float32) {
 
 func (poly *Polygon) FollowMouse() {
 	mouse := rl.GetMousePosition()
+
+	// Differenz zwischen alter Position und Maus
 	delta := rl.Vector2Subtract(mouse, poly.basic.location)
 
-	for i := range poly.verticesCount {
+	// Alle Vertices verschieben
+	for i := range poly.vertices {
 		poly.vertices[i] = rl.Vector2Add(poly.vertices[i], delta)
 	}
+
+	// Location aktualisieren
 	poly.basic.location = mouse
 }
 
-// Projektionsbereich eines Polygons auf einer Achse
-func projectPolygon(poly Polygon, axis rl.Vector2) (min, max float32) {
-	min = rl.Vector2DotProduct(poly.vertices[0], axis)
+// Projektionsbereich auf einer Achse
+func projectPolygon(vertices []rl.Vector2, axis rl.Vector2) (min, max float32) {
+	min = rl.Vector2DotProduct(vertices[0], axis)
 	max = min
-	for _, vertex := range poly.vertices[1:] {
+	for _, vertex := range vertices[1:] {
 		proj := rl.Vector2DotProduct(vertex, axis)
 		if proj < min {
 			min = proj
@@ -121,21 +132,22 @@ func projectPolygon(poly Polygon, axis rl.Vector2) (min, max float32) {
 }
 
 // Alle Normalenachsen eines Polygons
-func getAxes(poly Polygon) []rl.Vector2 {
+func getAxes(vertices []rl.Vector2) []rl.Vector2 {
 	axes := []rl.Vector2{}
-	for i := range poly.verticesCount {
-		edge := rl.Vector2Normalize(rl.Vector2Subtract(poly.vertices[(i+1)%poly.verticesCount], poly.vertices[i]))
+	n := len(vertices)
+	for i := range n {
+		edge := rl.Vector2Normalize(rl.Vector2Subtract(vertices[(i+1)%n], vertices[i]))
 		axes = append(axes, rl.Vector2{-edge.Y, edge.X})
 	}
 	return axes
 }
 
-// Prüft ob ein Punkt in einem Polygon liegt
-func pointInPolygon(point rl.Vector2, poly Polygon) bool {
-	for i := range poly.verticesCount {
-		edge := rl.Vector2Subtract(poly.vertices[(i+1)%poly.verticesCount], poly.vertices[i])
+func pointInPolygon(point rl.Vector2, vertices []rl.Vector2) bool {
+	n := len(vertices)
+	for i := range n {
+		edge := rl.Vector2Subtract(vertices[(i+1)%n], vertices[i])
 		edge_perp := rl.Vector2{-edge.Y, edge.X}
-		toPoint := rl.Vector2Subtract(point, poly.vertices[i])
+		toPoint := rl.Vector2Subtract(point, vertices[i])
 
 		if rl.Vector2DotProduct(edge_perp, toPoint) < 0 {
 			return false
@@ -144,20 +156,20 @@ func pointInPolygon(point rl.Vector2, poly Polygon) bool {
 	return true
 }
 
-// Findet alle Kontaktpunkte zwischen zwei Polygonen
-func findContactPoints(polyA, polyB Polygon) []rl.Vector2 {
+func findContactPoints(polyA_vertices, polyB_vertices []rl.Vector2) []rl.Vector2 {
 	contacts := []rl.Vector2{}
 
 	// 1. Checke, welche Ecken von A in B liegen
-	for _, p := range polyA.vertices {
-		if pointInPolygon(p, polyB) {
+	for _, p := range polyA_vertices {
+		if pointInPolygon(p, polyB_vertices) {
 			contacts = append(contacts, p)
 		}
 	}
 
 	// 2. Checke, welche Ecken von B in A liegen
-	for _, p := range polyB.vertices {
-		if pointInPolygon(p, polyA) {
+
+	for _, p := range polyB_vertices {
+		if pointInPolygon(p, polyA_vertices) {
 			contacts = append(contacts, p)
 		}
 	}
@@ -165,12 +177,12 @@ func findContactPoints(polyA, polyB Polygon) []rl.Vector2 {
 	return contacts
 }
 
-// Findet die Referenzkante für die Kontaktpunktberechnung
-func findReferenceEdge(poly Polygon, normal rl.Vector2) (p1, p2 rl.Vector2) {
+func findReferenceEdge(vertices []rl.Vector2, normal rl.Vector2) (p1, p2 rl.Vector2) {
 	bestDot := float32(-math.MaxFloat32)
-	for i := range poly.verticesCount {
-		a := poly.vertices[i]
-		b := poly.vertices[(i+1)%poly.verticesCount]
+	n := len(vertices)
+	for i := range n {
+		a := vertices[i]
+		b := vertices[(i+1)%n]
 
 		edge := rl.Vector2Normalize(rl.Vector2Subtract(b, a))
 		edgeNormal := rl.Vector2{-edge.Y, edge.X}
@@ -185,7 +197,6 @@ func findReferenceEdge(poly Polygon, normal rl.Vector2) (p1, p2 rl.Vector2) {
 	return p1, p2
 }
 
-// Projiziert einen Punkt auf eine Kante
 func projectPointOntoEdge(p, a, b rl.Vector2) rl.Vector2 {
 	ab := rl.Vector2Subtract(b, a)
 	t := rl.Vector2DotProduct(rl.Vector2Subtract(p, a), ab) /
@@ -201,9 +212,9 @@ func projectPointOntoEdge(p, a, b rl.Vector2) rl.Vector2 {
 	return rl.Vector2Add(a, rl.Vector2Scale(ab, t))
 }
 
-// Überträgt Kontaktpunkte auf die Referenzkante von Polygon A
-func transferContactsToA(contacts []rl.Vector2, polyA Polygon, normal rl.Vector2) []rl.Vector2 {
-	refA, refB := findReferenceEdge(polyA, normal)
+func transferContactsToA(contacts []rl.Vector2, polyA_vertices []rl.Vector2, normal rl.Vector2) []rl.Vector2 {
+
+	refA, refB := findReferenceEdge(polyA_vertices, normal)
 
 	projected := []rl.Vector2{}
 	for _, c := range contacts {
@@ -214,16 +225,14 @@ func transferContactsToA(contacts []rl.Vector2, polyA Polygon, normal rl.Vector2
 }
 
 // SAT-Kollisionstest
-func SATCollision(polyA, polyB Polygon) (isColliding bool, mtv rl.Vector2, contacts []rl.Vector2) {
+func SATCollision(polyA, polyB Polygon) (bool, rl.Vector2, []rl.Vector2) {
 	smallestOverlap := float32(math.MaxFloat32)
 	var smallestAxis rl.Vector2
-
-	// Alle Achsen beider Polygone sammeln
-	axes := append(getAxes(polyA), getAxes(polyB)...)
+	axes := append(getAxes(polyA.vertices), getAxes(polyB.vertices)...)
 
 	for _, axis := range axes {
-		minA, maxA := projectPolygon(polyA, axis)
-		minB, maxB := projectPolygon(polyB, axis)
+		minA, maxA := projectPolygon(polyA.vertices, axis)
+		minB, maxB := projectPolygon(polyB.vertices, axis)
 
 		overlap := float32(math.Min(float64(maxA), float64(maxB))) - float32(math.Max(float64(minA), float64(minB)))
 		if overlap <= 0 {
@@ -233,7 +242,6 @@ func SATCollision(polyA, polyB Polygon) (isColliding bool, mtv rl.Vector2, conta
 		if overlap < smallestOverlap {
 			smallestOverlap = overlap
 			smallestAxis = axis
-
 			// Richtung korrigieren
 			dir := rl.Vector2Subtract(polyB.basic.location, polyA.basic.location)
 			if rl.Vector2DotProduct(dir, axis) < 0 {
@@ -242,11 +250,11 @@ func SATCollision(polyA, polyB Polygon) (isColliding bool, mtv rl.Vector2, conta
 		}
 	}
 
-	mtv = rl.Vector2Scale(smallestAxis, smallestOverlap)
+	mtv := rl.Vector2Scale(smallestAxis, smallestOverlap)
 
-	rawContacts := findContactPoints(polyA, polyB)
+	rawContacts := findContactPoints(polyA.vertices, polyB.vertices)
 
-	contacts = transferContactsToA(rawContacts, polyA, rl.Vector2Scale(rl.Vector2Normalize(smallestAxis), -1))
+	contacts := transferContactsToA(rawContacts, polyA.vertices, rl.Vector2Scale(rl.Vector2Normalize(smallestAxis), -1))
 
 	return true, mtv, contacts
 }
