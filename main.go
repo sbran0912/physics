@@ -13,18 +13,21 @@ func main() {
 	rl.InitWindow(screenWidth, screenHeight, "Physics - raylib-go")
 	defer rl.CloseWindow()
 
-	a := lib.CreatePolygon(500, 0, 150, 150, false)
-	b := lib.CreatePolygon(400, 400, 600, 50, true)
-	a.Rotate(0.9)
-	//b.Rotate(0.2)
+	a := lib.CreatePolygon(600, 100, 150, 150, false)
+	b := lib.CreatePolygon(350, 400, 700, 50, true)
+	a.Rotate(0.3)
+	//b.Rotate(-0.3)
+	//b.ApplyForce(rl.Vector2{0, 0}, -0.005)
+	//a.ApplyForce(rl.Vector2{0, 2}, 0)
 
 	for !rl.WindowShouldClose() {
 		rl.BeginDrawing()
 		rl.ClearBackground(rl.DarkBlue)
 
 		//Gravity anwenden
-		a.ApplyForce(rl.Vector2{0, 0.1}, 0)
-		//a.basic.velocity = rl.Vector2ClampValue(a.basic.velocity, 0, 10)
+		a.ApplyForce(rl.Vector2{0, 0.3}, 0)
+
+		//Kollision
 		ok, mtv, contacts := lib.DetectCollPoly(&a, &b)
 		if ok {
 			//fmt.Println("Kollision!!")
@@ -32,10 +35,9 @@ func main() {
 			a.ApplyForce(forceA, angForcA)
 			b.ApplyForce(forceB, angForceB)
 		}
-		//fmt.Println("Acceleration A:", a.basic.accel, a.basic.angAccel)
+
 		a.Update()
 		b.Update()
-		//fmt.Println("Velocity A:", a.basic.velocity, a.basic.angVelocity)
 		a.Draw(rl.Red, 3)
 		b.Draw(rl.White, 2)
 

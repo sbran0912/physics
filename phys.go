@@ -1,6 +1,7 @@
 package lib
 
 import (
+	"fmt"
 	"math"
 
 	rl "github.com/gen2brain/raylib-go/raylib"
@@ -31,6 +32,7 @@ type BasicShape struct {
 	angAccel    float32
 	mass        float32
 	inertia     float32
+	isGrounded  bool
 }
 
 type Polygon struct {
@@ -50,7 +52,7 @@ func CreatePolygon(x float32, y float32, w float32, h float32, wall bool) Polygo
 
 	if !wall {
 		mass = w * h
-		inertia = mass * (w*w + h*h)
+		inertia = mass * (w*w + h*h) / 2
 	} else {
 		mass = float32(math.MaxFloat32)
 		inertia = float32(math.MaxFloat32)
@@ -60,10 +62,11 @@ func CreatePolygon(x float32, y float32, w float32, h float32, wall bool) Polygo
 
 	poly := Polygon{
 		basic: BasicShape{
-			typ:      PolygonShape,
-			location: rl.Vector2{x + w/2, y + h/2},
-			mass:     mass,
-			inertia:  inertia,
+			typ:        PolygonShape,
+			location:   rl.Vector2{x + w/2, y + h/2},
+			mass:       mass,
+			inertia:    inertia,
+			isGrounded: false,
 		},
 		vertices: vertices,
 	}
@@ -71,19 +74,24 @@ func CreatePolygon(x float32, y float32, w float32, h float32, wall bool) Polygo
 }
 
 func (poly *Polygon) ApplyForce(force rl.Vector2, angForce float32) {
-	poly.basic.accel = rl.Vector2Add(poly.basic.accel, force)
-	poly.basic.angAccel += angForce
+	if !poly.basic.isGrounded {
+		poly.basic.accel = rl.Vector2Add(poly.basic.accel, force)
+		poly.basic.angAccel += angForce
+	}
 }
 
 func (poly *Polygon) Update() {
 	poly.basic.velocity = rl.Vector2Add(poly.basic.velocity, poly.basic.accel)
 	poly.basic.angVelocity += poly.basic.angAccel
 
+	//poly.basic.velocity = rl.Vector2Scale(poly.basic.velocity, 0.995)
 	poly.basic.location = rl.Vector2Add(poly.basic.location, poly.basic.velocity)
 	for i := range poly.vertices {
 		poly.vertices[i] = rl.Vector2Add(poly.vertices[i], poly.basic.velocity)
 	}
+	//poly.basic.angVelocity *= 0.995
 	poly.Rotate(poly.basic.angVelocity)
+
 	poly.basic.accel = rl.Vector2{0, 0}
 	poly.basic.angAccel = 0
 }
@@ -344,12 +352,12 @@ func ResolveCollPoly(
 	if polyA.basic.mass < math.MaxFloat32 {
 		polyA.ResetPos(rl.Vector2Scale(mtv, -0.5))
 	} else {
-		polyB.ResetPos(rl.Vector2Scale(mtv, 0.5))
+		polyB.ResetPos(rl.Vector2Scale(mtv, 1.0))
 	}
 	if polyB.basic.mass < math.MaxFloat32 {
 		polyB.ResetPos(rl.Vector2Scale(mtv, 0.5))
 	} else {
-		polyA.ResetPos(rl.Vector2Scale(mtv, -0.5))
+		polyA.ResetPos(rl.Vector2Scale(mtv, -1.0))
 	}
 
 	// danach muss mtv normalisiert werden
@@ -358,7 +366,7 @@ func ResolveCollPoly(
 	//finde bei zwei Kontaktpunkten den Kollisionspunkt in der Mitte
 	collisionpoint := contacts[0]
 	if len(contacts) > 1 {
-		collisionpoint = rl.Vector2Scale(rl.Vector2Add(collisionpoint, contacts[1]), 0.5)
+		collisionpoint = rl.Vector2Scale(rl.Vector2Add(contacts[0], contacts[1]), 0.5)
 	}
 
 	// Linie von A.location zu Kollisionspunkt
@@ -373,11 +381,25 @@ func ResolveCollPoly(
 	VgesamtA := rl.Vector2Add(polyA.basic.velocity, VtanA)
 	VgesamtB := rl.Vector2Add(polyB.basic.velocity, VtanB)
 	velocity_AB := rl.Vector2Subtract(VgesamtA, VgesamtB)
-	//fmt.Println("VtanA:", VtanA)
-	//fmt.Println("Gesamt velocity AB mit Tangentialgeschwindigkeit:", velocity_AB)
 
-	if rl.Vector2DotProduct(velocity_AB, rl.Vector2Scale(mtv, -1)) < 0 { // wenn negativ, dann auf Kollisionskurs
-		e := float32(1) //inelastischer Stoß
+	//liegen Polygone auf Grund?
+	if polyB.basic.mass == math.MaxFloat32 && len(contacts) > 1 && rl.Vector2Length(velocity_AB) < 3.0 {
+		polyA.basic.angVelocity = polyB.basic.angVelocity
+		polyA.basic.velocity = polyB.basic.velocity
+		polyA.basic.isGrounded = true
+	} else {
+		polyA.basic.isGrounded = false
+	}
+
+	fmt.Println("Anzahl Kontakte:", len(contacts))
+	fmt.Println("velocity AB:", velocity_AB, rl.Vector2Length(velocity_AB))
+	fmt.Println("isGrounded:", polyA.basic.isGrounded)
+
+	// wenn negativ, dann auf Kollisionskurs
+	if rl.Vector2DotProduct(velocity_AB, rl.Vector2Scale(mtv, -1)) < 0 {
+		// Impulskonstante e in Abhängigkeit der Geschwindigkeit velocity_AB ab Stärke 3 (von 0 bis 0.7)
+		e := rl.Clamp(rl.Vector2Length(velocity_AB)/5, 0, 0.5)
+		//e := float32(0.8)
 		j_denominator := rl.Vector2DotProduct(rl.Vector2Scale(velocity_AB, -(1+e)), mtv)
 		j_divLinear := rl.Vector2DotProduct(mtv, rl.Vector2Scale(mtv, (1/polyA.basic.mass+1/polyB.basic.mass)))
 		j_divAngular := float32(math.Pow(float64(rl.Vector2DotProduct(rAP_perp, mtv)), 2))/polyA.basic.inertia + float32(math.Pow(float64(rl.Vector2DotProduct(rBP_perp, mtv)), 2))/polyB.basic.inertia
@@ -387,18 +409,22 @@ func ResolveCollPoly(
 		t_scalarprodukt := rl.Vector2DotProduct(velocity_AB, t)
 		t = rl.Vector2Normalize(rl.Vector2Scale(t, t_scalarprodukt))
 
-		friction := float32(-0.45)
-		//kalkuliere Kraft polyA
+		friction := float32(-0.1)
+		//kalkuliere Kraft für polyA
 		forceA = rl.Vector2Add(rl.Vector2Scale(mtv, (j/polyA.basic.mass)), rl.Vector2Scale(t, (friction*-j/polyA.basic.mass)))
 		angForceA = rl.Vector2DotProduct(rAP_perp, rl.Vector2Add(rl.Vector2Scale(mtv, j/polyA.basic.inertia), rl.Vector2Scale(t, friction*-j/polyA.basic.inertia)))
-		//kalkuliere Kraft polyB
+
+		//kalkuliere Kraft für polyB
 		forceB = rl.Vector2Add(rl.Vector2Scale(mtv, (-j/polyB.basic.mass)), rl.Vector2Scale(t, (friction*j/polyB.basic.mass)))
-		angForceB = rl.Vector2DotProduct(rAP_perp, rl.Vector2Add(rl.Vector2Scale(mtv, j/polyB.basic.inertia), rl.Vector2Scale(t, friction*-j/polyB.basic.inertia)))
+		angForceB = rl.Vector2DotProduct(rBP_perp, rl.Vector2Add(rl.Vector2Scale(mtv, -j/polyB.basic.inertia), rl.Vector2Scale(t, friction*j/polyB.basic.inertia)))
+
 	} else {
 		forceA = rl.Vector2{0, 0}
 		angForceA = 0.0
 		forceB = rl.Vector2{0, 0}
 		angForceB = 0.0
 	}
+	fmt.Println("forceA", forceA, "angforceA", angForceA, "forceB", forceB, "angForceB", angForceB)
+	fmt.Println("-----")
 	return forceA, angForceA, forceB, angForceB
 }
