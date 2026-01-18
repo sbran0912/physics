@@ -26,13 +26,13 @@ type Shape interface {
 type BasicShape struct {
 	typ         ShapeType
 	location    rl.Vector2
-	Velocity    rl.Vector2
+	velocity    rl.Vector2
 	AngVelocity float32
 	accel       rl.Vector2
 	angAccel    float32
 	mass        float32
 	inertia     float32
-	IsGrounded  bool
+	isGrounded  bool
 }
 
 type Polygon struct {
@@ -66,7 +66,7 @@ func CreatePolygon(x float32, y float32, w float32, h float32, wall bool) Polygo
 			location:   rl.Vector2{x + w/2, y + h/2},
 			mass:       mass,
 			inertia:    inertia,
-			IsGrounded: false,
+			isGrounded: false,
 		},
 		vertices: vertices,
 	}
@@ -80,14 +80,14 @@ func (poly *Polygon) ApplyForce(force rl.Vector2, angForce float32) {
 
 func (poly *Polygon) Update() {
 	fmt.Println("Polygon Update", "angaccel:", poly.Basic.angAccel, "accel:", poly.Basic.accel)
-	poly.Basic.Velocity = rl.Vector2Add(poly.Basic.Velocity, poly.Basic.accel)
+	poly.Basic.velocity = rl.Vector2Add(poly.Basic.velocity, poly.Basic.accel)
 	poly.Basic.AngVelocity += poly.Basic.angAccel
-	fmt.Println("Polygon Update", "angvel:", poly.Basic.AngVelocity, "vel:", poly.Basic.Velocity)
+	fmt.Println("Polygon Update", "angvel:", poly.Basic.AngVelocity, "vel:", poly.Basic.velocity)
 
 	//poly.basic.velocity = rl.Vector2Scale(poly.basic.velocity, 0.995)
-	poly.Basic.location = rl.Vector2Add(poly.Basic.location, poly.Basic.Velocity)
+	poly.Basic.location = rl.Vector2Add(poly.Basic.location, poly.Basic.velocity)
 	for i := range poly.vertices {
-		poly.vertices[i] = rl.Vector2Add(poly.vertices[i], poly.Basic.Velocity)
+		poly.vertices[i] = rl.Vector2Add(poly.vertices[i], poly.Basic.velocity)
 	}
 	//poly.basic.angVelocity *= 0.995
 	poly.Rotate(poly.Basic.AngVelocity)
@@ -117,6 +117,15 @@ func (poly *Polygon) ResetPos(delta rl.Vector2) {
 		poly.vertices[i] = rl.Vector2Add(poly.vertices[i], delta)
 	}
 	poly.Basic.location = rl.Vector2Add(poly.Basic.location, delta)
+}
+
+func (poly *Polygon) ApplyGravity(gravity rl.Vector2) {
+	if !poly.Basic.isGrounded {
+		poly.ApplyForce(gravity, 0)
+	} else {
+		//Rückstoß der Kollision wird neutralisiert
+		poly.ApplyForce(rl.Vector2Scale(poly.Basic.velocity, -1), poly.Basic.AngVelocity*-1)
+	}
 }
 
 func CreateCircle(x float32, y float32, r float32, wall bool) Circle {
@@ -150,13 +159,13 @@ func (circle *Circle) ApplyForce(force rl.Vector2, angForce float32) {
 }
 
 func (circle *Circle) Update() {
-	circle.basic.Velocity = rl.Vector2Add(circle.basic.Velocity, circle.basic.accel)
+	circle.basic.velocity = rl.Vector2Add(circle.basic.velocity, circle.basic.accel)
 	circle.basic.accel = rl.Vector2{0.0, 0.0}
 	circle.basic.AngVelocity += circle.basic.angAccel
 	circle.basic.angAccel = 0.0
 
-	circle.basic.location = rl.Vector2Add(circle.basic.location, circle.basic.Velocity)
-	circle.orientation = rl.Vector2Add(circle.orientation, circle.basic.Velocity)
+	circle.basic.location = rl.Vector2Add(circle.basic.location, circle.basic.velocity)
+	circle.orientation = rl.Vector2Add(circle.orientation, circle.basic.velocity)
 	circle.Rotate(circle.basic.AngVelocity)
 }
 
@@ -380,23 +389,30 @@ func ResolveCollPoly(
 	rBP_perp := rl.Vector2{-rBP.Y, rBP.X}
 	VtanA := rl.Vector2Scale(rAP_perp, polyA.Basic.AngVelocity)
 	VtanB := rl.Vector2Scale(rBP_perp, polyB.Basic.AngVelocity)
-	VgesamtA := rl.Vector2Add(polyA.Basic.Velocity, VtanA)
-	VgesamtB := rl.Vector2Add(polyB.Basic.Velocity, VtanB)
+	VgesamtA := rl.Vector2Add(polyA.Basic.velocity, VtanA)
+	VgesamtB := rl.Vector2Add(polyB.Basic.velocity, VtanB)
 	velocity_AB := rl.Vector2Subtract(VgesamtA, VgesamtB)
 
 	//liegen Polygone auf Grund?
-	if polyB.Basic.mass == math.MaxFloat32 && polyB.Basic.inertia == math.MaxFloat32 && len(contacts) > 1 && rl.Vector2Length(velocity_AB) < 2.0 {
-		//polyA.Basic.AngVelocity = polyB.Basic.AngVelocity
-		//polyA.Basic.Velocity = polyB.Basic.Velocity
-		//fmt.Println("PolyA velocity zurückgesetzt")
-		polyA.Basic.IsGrounded = true
+	if len(contacts) > 1 && rl.Vector2Length(velocity_AB) < 2.0 {
+		if polyB.Basic.mass == math.MaxFloat32 && polyB.Basic.inertia == math.MaxFloat32 {
+			polyA.Basic.isGrounded = true
+		} else {
+			polyA.Basic.isGrounded = false
+		}
+		if polyA.Basic.mass == math.MaxFloat32 && polyA.Basic.inertia == math.MaxFloat32 {
+			polyB.Basic.isGrounded = true
+		} else {
+			polyB.Basic.isGrounded = false
+		}
 	} else {
-		polyA.Basic.IsGrounded = false
+		polyA.Basic.isGrounded = false
+		polyB.Basic.isGrounded = false
 	}
 
 	fmt.Println("Anzahl Kontakte:", len(contacts))
 	fmt.Println("velocity AB:", velocity_AB, rl.Vector2Length(velocity_AB))
-	fmt.Println("isGrounded:", polyA.Basic.IsGrounded)
+	fmt.Println("isGrounded:", polyA.Basic.isGrounded)
 
 	// wenn negativ, dann auf Kollisionskurs
 	if rl.Vector2DotProduct(velocity_AB, rl.Vector2Scale(mtv, -1)) < 0 {
