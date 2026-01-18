@@ -16,7 +16,7 @@ func main() {
 	a := lib.CreatePolygon(600, 100, 150, 150, false)
 	b := lib.CreatePolygon(350, 400, 700, 50, true)
 	a.Rotate(0.3)
-	//b.Rotate(-0.3)
+	b.Rotate(-0.3)
 	//b.ApplyForce(rl.Vector2{0, 0}, -0.005)
 	//a.ApplyForce(rl.Vector2{0, 2}, 0)
 
@@ -25,7 +25,11 @@ func main() {
 		rl.ClearBackground(rl.DarkBlue)
 
 		//Gravity anwenden
-		a.ApplyForce(rl.Vector2{0, 0.3}, 0)
+		if !a.Basic.IsGrounded {
+			a.ApplyForce(rl.Vector2{0, 0.3}, 0)
+		} else {
+			a.ApplyForce(rl.Vector2Scale(a.Basic.Velocity, -1), a.Basic.AngVelocity*-1)
+		}
 
 		//Kollision
 		ok, mtv, contacts := lib.DetectCollPoly(&a, &b)
@@ -37,7 +41,7 @@ func main() {
 		}
 
 		a.Update()
-		b.Update()
+		//b.Update()
 		a.Draw(rl.Red, 3)
 		b.Draw(rl.White, 2)
 
