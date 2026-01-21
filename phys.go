@@ -332,7 +332,7 @@ func resetPolyPositionsBasedOnMass(polyA, polyB *Polygon, mtv rl.Vector2) {
 	}
 }
 
-func calculatePolyRelativeVectors(polyA, polyB *Polygon, collisionPoint rl.Vector2) (rAP_perp, rBP_perp, velocityAB rl.Vector2) {
+func calculatePolyRelativeVectors(polyA, polyB *Polygon, collisionPoint rl.Vector2) (rAP_perp, rBP_perp, VgesamtA, velocity_AB rl.Vector2) {
 
 	// Linie von A.location zu Kollisionspunkt
 	rAP := rl.Vector2Subtract(collisionPoint, polyA.basic.location)
@@ -344,14 +344,14 @@ func calculatePolyRelativeVectors(polyA, polyB *Polygon, collisionPoint rl.Vecto
 
 	VtanA := rl.Vector2Scale(rAP_perp, polyA.basic.AngVelocity)
 	VtanB := rl.Vector2Scale(rBP_perp, polyB.basic.AngVelocity)
-	VgesamtA := rl.Vector2Add(polyA.basic.velocity, VtanA)
+	VgesamtA = rl.Vector2Add(polyA.basic.velocity, VtanA)
 	VgesamtB := rl.Vector2Add(polyB.basic.velocity, VtanB)
-	velocityAB = rl.Vector2Subtract(VgesamtA, VgesamtB)
+	velocity_AB = rl.Vector2Subtract(VgesamtA, VgesamtB)
 
-	return rAP_perp, rBP_perp, velocityAB
+	return rAP_perp, rBP_perp, VgesamtA, velocity_AB
 }
 
-func updatePolyGroundedStatus(polyA, polyB *Polygon, contacts []rl.Vector2, velocityAB rl.Vector2) {
+func updatePolyGroundedMass(polyA, polyB *Polygon, contacts []rl.Vector2, velocityAB rl.Vector2) {
 	// liegen Polygone auf Grund?
 	if len(contacts) > 1 && rl.Vector2Length(velocityAB) < 2.0 {
 		// Prüfe ob PolyB eine Wand ist (unendliche Masse/Trägheit)
@@ -367,6 +367,18 @@ func updatePolyGroundedStatus(polyA, polyB *Polygon, contacts []rl.Vector2, velo
 		} else {
 			polyB.basic.isGrounded = false
 		}
+	} else {
+		polyA.basic.isGrounded = false
+		polyB.basic.isGrounded = false
+	}
+}
+
+func updatePolyGrounded(polyA, polyB *Polygon, contacts []rl.Vector2, VgesamtA, velocityAB rl.Vector2) {
+	// liegen Polygone auf Grund?
+	if len(contacts) > 1 && rl.Vector2Length(velocityAB) < 1.0 && rl.Vector2Length(VgesamtA) < 1.0 {
+		// beide Objekte ruhen
+		polyA.basic.isGrounded = true
+		polyB.basic.isGrounded = true
 	} else {
 		polyA.basic.isGrounded = false
 		polyB.basic.isGrounded = false
@@ -460,7 +472,11 @@ func DetectCollisionPoly(polyA, polyB *Polygon) (isColliding bool, mtv rl.Vector
 	rawContacts := findContactPoints(polyA.vertices, polyB.vertices)
 	// Hinweis: smallestAxis ist bereits normalisiert!
 	contacts = transferContactsToA(rawContacts, polyA.vertices, rl.Vector2Scale(smallestAxis, -1))
-	return true, mtv, contacts
+	if len(contacts) > 0 {
+		return true, mtv, contacts
+	} else {
+		return false, rl.Vector2{}, nil
+	}
 }
 
 // Dispatcher: ruft die konkrete Detect-Funktion je Typkombination auf.
@@ -516,10 +532,12 @@ func ResolveCollisionPoly(
 	}
 
 	//finde relative Vektoren aus der Kollision
-	rAP_perp, rBP_perp, velocity_AB := calculatePolyRelativeVectors(polyA, polyB, collisionpoint)
+	rAP_perp, rBP_perp, vGesamtA, velocity_AB := calculatePolyRelativeVectors(polyA, polyB, collisionpoint)
 
-	//liegen Polygone auf Grund?
-	updatePolyGroundedStatus(polyA, polyB, contacts, velocity_AB)
+	//liegen Polygone auf Grund, wenn objekte auf der ebene liegen?
+	if checkParallel(mtv, rl.Vector2{0, 1}) {
+		updatePolyGrounded(polyA, polyB, contacts, vGesamtA, velocity_AB)
+	}
 
 	// wenn negativ, dann auf Kollisionskurs
 	if rl.Vector2DotProduct(velocity_AB, rl.Vector2Scale(mtv, -1)) < 0 {
@@ -579,4 +597,9 @@ func ResolveCollision(
 	default:
 		return rl.Vector2{}, 0, rl.Vector2{}, 0
 	}
+}
+
+// zeigen mtv und gravity in die gleiche Richtung?
+func checkParallel(mtv rl.Vector2, gravity rl.Vector2) bool {
+	return rl.FloatEquals(rl.Vector2DotProduct(mtv, gravity), rl.Vector2Length(mtv)*rl.Vector2Length(gravity))
 }
