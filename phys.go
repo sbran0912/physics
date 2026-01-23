@@ -375,7 +375,7 @@ func updatePolyGroundedMass(polyA, polyB *Polygon, contacts []rl.Vector2, veloci
 
 func checkPolyGrounded(polyA, polyB *Polygon, contacts []rl.Vector2, VgesamtA, velocityAB rl.Vector2) {
 	// liegen Polygone auf Grund?
-	if len(contacts) > 1 && rl.Vector2Length(velocityAB) < 1.5 && rl.Vector2Length(VgesamtA) < 1.5 {
+	if len(contacts) > 1 && rl.Vector2Length(velocityAB) < 1.0 && rl.Vector2Length(VgesamtA) < 1.0 {
 		// beide Objekte ruhen
 		polyA.basic.isGrounded = true
 		polyB.basic.isGrounded = true
@@ -387,8 +387,7 @@ func checkPolyGrounded(polyA, polyB *Polygon, contacts []rl.Vector2, VgesamtA, v
 
 func isPolyGrounded(contacts []rl.Vector2, VgesamtA, velocityAB, mtv rl.Vector2) bool {
 	// Prüfen, ob die Bedingungen für "Grounded" erfüllt sind
-	isGrounded := len(contacts) > 1 && rl.Vector2Length(velocityAB) < 2 && rl.Vector2Length(VgesamtA) < 2 && isHorizontal(mtv, rl.Vector2{0, 1})
-
+	isGrounded := len(contacts) > 1 && rl.Vector2Length(velocityAB) < 1.5 && rl.Vector2Length(VgesamtA) < 1.5 && isHorizontal(mtv, rl.Vector2{0, 1})
 	return isGrounded
 }
 
@@ -483,7 +482,9 @@ func calculatePolyCollisionForces(
 // liegt das Polygon beinahe horizontal (mtv / gravity > 0.9)?
 func isHorizontal(mtv rl.Vector2, gravity rl.Vector2) bool {
 	//return rl.FloatEquals(rl.Vector2DotProduct(mtv, gravity), rl.Vector2Length(mtv)*rl.Vector2Length(gravity))
-	return rl.Vector2DotProduct(mtv, gravity)/rl.Vector2Length(mtv)*rl.Vector2Length(gravity) > 0.9
+	result := rl.Vector2DotProduct(mtv, gravity) / rl.Vector2Length(mtv) * rl.Vector2Length(gravity)
+
+	return result > 0.9 || result < -0.9
 }
 
 // SAT-Kollisionstest
