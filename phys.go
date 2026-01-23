@@ -272,7 +272,7 @@ func findReferenceEdge(vertices []rl.Vector2, normal rl.Vector2) (p1, p2 rl.Vect
 	if n == 0 {
 		return rl.Vector2{}, rl.Vector2{}
 	}
-	for i := 0; i < n; i++ {
+	for i := range n {
 		a := vertices[i]
 		b := vertices[(i+1)%n]
 
@@ -373,9 +373,9 @@ func updatePolyGroundedMass(polyA, polyB *Polygon, contacts []rl.Vector2, veloci
 	}
 }
 
-func updatePolyGrounded(polyA, polyB *Polygon, contacts []rl.Vector2, VgesamtA, velocityAB rl.Vector2) {
+func checkPolyGrounded(polyA, polyB *Polygon, contacts []rl.Vector2, VgesamtA, velocityAB rl.Vector2) {
 	// liegen Polygone auf Grund?
-	if len(contacts) > 1 && rl.Vector2Length(velocityAB) < 1.0 && rl.Vector2Length(VgesamtA) < 1.0 {
+	if len(contacts) > 1 && rl.Vector2Length(velocityAB) < 1.5 && rl.Vector2Length(VgesamtA) < 1.5 {
 		// beide Objekte ruhen
 		polyA.basic.isGrounded = true
 		polyB.basic.isGrounded = true
@@ -383,6 +383,48 @@ func updatePolyGrounded(polyA, polyB *Polygon, contacts []rl.Vector2, VgesamtA, 
 		polyA.basic.isGrounded = false
 		polyB.basic.isGrounded = false
 	}
+}
+
+func isPolyGrounded(contacts []rl.Vector2, VgesamtA, velocityAB, mtv rl.Vector2) bool {
+	// Prüfen, ob die Bedingungen für "Grounded" erfüllt sind
+	isGrounded := len(contacts) > 1 && rl.Vector2Length(velocityAB) < 2 && rl.Vector2Length(VgesamtA) < 2 && isHorizontal(mtv, rl.Vector2{0, 1})
+
+	return isGrounded
+}
+
+func checkContactStabilityBoth(polyA, polyB *Polygon, contacts []rl.Vector2, mtv rl.Vector2) (
+	ratioA float32,
+	ratioB float32,
+	hasStableContact bool) {
+
+	if len(contacts) < 2 {
+		return 0, 0, false
+	}
+
+	// Normale der Kollision
+	normal := rl.Vector2Scale(mtv, -1)
+
+	// Für Polygon A analysieren
+	edgeStartA, edgeEndA := findReferenceEdge(polyA.vertices, normal)
+	edgeLengthA := rl.Vector2Distance(edgeStartA, edgeEndA)
+	contactDistance := rl.Vector2Distance(contacts[0], contacts[1])
+
+	if edgeLengthA > 0 {
+		ratioA = contactDistance / edgeLengthA
+	}
+
+	// Für Polygon B analysieren (inverse Normale)
+	edgeStartB, edgeEndB := findReferenceEdge(polyB.vertices, rl.Vector2Scale(normal, -1))
+	edgeLengthB := rl.Vector2Distance(edgeStartB, edgeEndB)
+
+	if edgeLengthB > 0 {
+		ratioB = contactDistance / edgeLengthB
+	}
+
+	// Hat stabilen Kontakt wenn mindestens eines ein gutes Verhältnis hat
+	hasStableContact = (ratioA > 0.3) || (ratioB > 0.3)
+
+	return ratioA, ratioB, hasStableContact
 }
 
 func calculatePolyImpulse(
@@ -418,7 +460,7 @@ func calculatePolyCollisionForces(
 	mtv, rAP_perp, rBP_perp, velocity_AB rl.Vector2) (forceA rl.Vector2, angForceA float32, forceB rl.Vector2, angForceB float32) {
 
 	// Impulskonstante festlegen
-	var e float32 = 0.5
+	var e float32 = 0.3
 
 	// Reibungsvektor t berechnen
 	t := calculateFrictionVector(mtv, velocity_AB)
@@ -436,6 +478,12 @@ func calculatePolyCollisionForces(
 	angForceB = rl.Vector2DotProduct(rBP_perp, rl.Vector2Add(rl.Vector2Scale(mtv, -j/polyB.basic.inertia), rl.Vector2Scale(t, friction*j/polyB.basic.inertia)))
 
 	return forceA, angForceA, forceB, angForceB
+}
+
+// liegt das Polygon beinahe horizontal (mtv / gravity > 0.9)?
+func isHorizontal(mtv rl.Vector2, gravity rl.Vector2) bool {
+	//return rl.FloatEquals(rl.Vector2DotProduct(mtv, gravity), rl.Vector2Length(mtv)*rl.Vector2Length(gravity))
+	return rl.Vector2DotProduct(mtv, gravity)/rl.Vector2Length(mtv)*rl.Vector2Length(gravity) > 0.9
 }
 
 // SAT-Kollisionstest
@@ -534,9 +582,16 @@ func ResolveCollisionPoly(
 	//finde relative Vektoren aus der Kollision
 	rAP_perp, rBP_perp, vGesamtA, velocity_AB := calculatePolyRelativeVectors(polyA, polyB, collisionpoint)
 
-	//liegen Polygone auf Grund, wenn objekte auf der ebene liegen?
-	if checkParallel(mtv, rl.Vector2{0, 1}) {
-		updatePolyGrounded(polyA, polyB, contacts, vGesamtA, velocity_AB)
+	if isPolyGrounded(contacts, vGesamtA, velocity_AB, mtv) {
+		_, _, stable := checkContactStabilityBoth(polyA, polyB, contacts, mtv)
+		if stable {
+			polyA.basic.isGrounded = true
+			polyB.basic.isGrounded = true
+		}
+
+	} else {
+		polyA.basic.isGrounded = false
+		polyB.basic.isGrounded = false
 	}
 
 	// wenn negativ, dann auf Kollisionskurs
@@ -597,9 +652,4 @@ func ResolveCollision(
 	default:
 		return rl.Vector2{}, 0, rl.Vector2{}, 0
 	}
-}
-
-// zeigen mtv und gravity in die gleiche Richtung?
-func checkParallel(mtv rl.Vector2, gravity rl.Vector2) bool {
-	return rl.FloatEquals(rl.Vector2DotProduct(mtv, gravity), rl.Vector2Length(mtv)*rl.Vector2Length(gravity))
 }
