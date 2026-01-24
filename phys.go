@@ -1,6 +1,7 @@
 package lib
 
 import (
+	"fmt"
 	"math"
 
 	rl "github.com/gen2brain/raylib-go/raylib"
@@ -43,7 +44,7 @@ func CreatePolygon(x float32, y float32, w float32, h float32, wall bool) *Polyg
 
 	if !wall {
 		mass = w * h
-		inertia = mass * (w*w + h*h) / 2
+		inertia = mass * (w*w + h*h)
 	} else {
 		mass = float32(math.MaxFloat32)
 		inertia = float32(math.MaxFloat32)
@@ -125,8 +126,8 @@ func CreateCircle(x float32, y float32, r float32, wall bool) *Circle {
 	var inertia float32
 
 	if !wall {
-		mass = r * r / 4
-		inertia = r * r * r / 2
+		mass = r * r * 2
+		inertia = (r * r * r) * 100
 	} else {
 		mass = float32(math.MaxFloat32)
 		inertia = float32(math.MaxFloat32)
@@ -332,6 +333,21 @@ func resetPolyPositionsBasedOnMass(polyA, polyB *Polygon, mtv rl.Vector2) {
 	}
 }
 
+func resetCirclePolyPositionsBasedOnMass(poly *Polygon, circle *Circle, mtv rl.Vector2) {
+	// Objekte um mtv zurücksetzen basierend auf ihrer Masse
+	if poly.basic.mass < math.MaxFloat32 {
+		poly.ResetPos(rl.Vector2Scale(mtv, -0.5))
+	} else {
+		circle.ResetPos(rl.Vector2Scale(mtv, 0.5))
+	}
+
+	if circle.basic.mass < math.MaxFloat32 {
+		circle.ResetPos(rl.Vector2Scale(mtv, 0.5))
+	} else {
+		poly.ResetPos(rl.Vector2Scale(mtv, -0.5))
+	}
+}
+
 func calculatePolyRelativeVectors(polyA, polyB *Polygon, collisionPoint rl.Vector2) (rAP_perp, rBP_perp, VgesamtA, velocity_AB rl.Vector2) {
 
 	// Linie von A.location zu Kollisionspunkt
@@ -466,6 +482,72 @@ func isHorizontal(mtv rl.Vector2, gravity rl.Vector2) bool {
 	return result > 0.9 || result < -0.9
 }
 
+func calculateCirclePolyRelativeVectors(poly *Polygon, circle *Circle, collisionPoint rl.Vector2) (rAP_perp, rBP_perp, VgesamtA, velocity_AB rl.Vector2) {
+
+	// Linie von A.location zu Kollisionspunkt
+	rAP := rl.Vector2Subtract(collisionPoint, poly.basic.location)
+	// Linie von B.location zu Kollisionspunkt
+	rBP := rl.Vector2Subtract(collisionPoint, circle.basic.location)
+
+	rAP_perp = rl.Vector2{-rAP.Y, rAP.X}
+	rBP_perp = rl.Vector2{-rBP.Y, rBP.X}
+
+	VtanA := rl.Vector2Scale(rAP_perp, poly.basic.AngVelocity)
+	VtanB := rl.Vector2Scale(rBP_perp, circle.basic.AngVelocity)
+	VgesamtA = rl.Vector2Add(poly.basic.velocity, VtanA)
+	VgesamtB := rl.Vector2Add(circle.basic.velocity, VtanB)
+	velocity_AB = rl.Vector2Subtract(VgesamtA, VgesamtB)
+
+	return rAP_perp, rBP_perp, VgesamtA, velocity_AB
+}
+
+func calculateCirclePolyCollisionForces(
+	poly *Polygon,
+	circle *Circle,
+	mtv, rAP_perp, rBP_perp, velocity_AB rl.Vector2) (forceA rl.Vector2, angForceA float32, forceB rl.Vector2, angForceB float32) {
+
+	// Impulskonstante festlegen
+	var e float32 = 0.3
+
+	// Reibungsvektor t berechnen
+	t := calculateFrictionVector(mtv, velocity_AB)
+	var friction float32 = -0.15 // Reibungskoeffizient
+
+	// Impuls berechnen
+	j := calculateCirclePolyImpulse(poly, circle, mtv, rAP_perp, velocity_AB, e)
+
+	//kalkuliere Kraft für poly
+	forceA = rl.Vector2Add(rl.Vector2Scale(mtv, (j/poly.basic.mass)), rl.Vector2Scale(t, (friction*-j/poly.basic.mass)))
+	angForceA = rl.Vector2DotProduct(rAP_perp, rl.Vector2Add(rl.Vector2Scale(mtv, j/poly.basic.inertia), rl.Vector2Scale(t, friction*-j/poly.basic.inertia)))
+
+	//kalkuliere Kraft für Circle
+	forceB = rl.Vector2Add(rl.Vector2Scale(mtv, (-j/circle.basic.mass)), rl.Vector2Scale(t, (friction*j/circle.basic.mass)))
+	angForceB = rl.Vector2DotProduct(rBP_perp, rl.Vector2Add(rl.Vector2Scale(mtv, -j/circle.basic.inertia), rl.Vector2Scale(t, friction*j/circle.basic.inertia)))
+
+	return forceA, angForceA, forceB, angForceB
+}
+
+func calculateCirclePolyImpulse(
+	poly *Polygon,
+	circle *Circle,
+	mtv, rAP_perp, velocity_AB rl.Vector2,
+	e float32) float32 {
+
+	jDenominator := rl.Vector2DotProduct(
+		rl.Vector2Scale(velocity_AB, -(1+e)),
+		mtv,
+	)
+
+	jDivLinear := rl.Vector2DotProduct(
+		mtv,
+		rl.Vector2Scale(mtv, (1/poly.basic.mass+1/circle.basic.mass)),
+	)
+	//nur für box
+	jDivAngular := float32(math.Pow(float64(rl.Vector2DotProduct(rAP_perp, mtv)), 2)) / poly.basic.inertia
+
+	return jDenominator / (jDivLinear + jDivAngular)
+}
+
 // SAT-Kollisionstest
 func DetectCollisionPoly(polyA, polyB *Polygon) (isColliding bool, mtv rl.Vector2, contacts []rl.Vector2) {
 	smallestOverlap := float32(math.MaxFloat32)
@@ -503,40 +585,6 @@ func DetectCollisionPoly(polyA, polyB *Polygon) (isColliding bool, mtv rl.Vector
 	if len(contacts) > 0 {
 		return true, mtv, contacts
 	} else {
-		return false, rl.Vector2{}, nil
-	}
-}
-
-// Dispatcher: ruft die konkrete Detect-Funktion je Typkombination auf.
-func DetectCollision(a, b Shape) (isColliding bool, mtv rl.Vector2, contacts []rl.Vector2) {
-
-	switch shapeA := a.(type) {
-	case *Polygon:
-		switch shapeB := b.(type) {
-		case *Polygon:
-			return DetectCollisionPoly(shapeA, shapeB)
-		case *Circle:
-			// TODO: Implementiere DetectCollPolyCircle(A, B)
-			// return DetectCollPolyCircle(A, B)
-			return false, rl.Vector2{}, nil
-		default:
-			return false, rl.Vector2{}, nil
-		}
-	/*
-		case *Circle:
-			switch shapeB := b.(type) {
-			case *Polygon:
-				// Für jetzt: TODO
-				return false, rl.Vector2{}, nil
-			case *Circle:
-				// TODO: Implementiere DetectCollCircleCircle(A, B)
-				return false, rl.Vector2{}, nil
-			default:
-				return false, rl.Vector2{}, nil
-			}
-
-	*/
-	default:
 		return false, rl.Vector2{}, nil
 	}
 }
@@ -589,6 +637,91 @@ func ResolveCollisionPoly(
 	return forceA, angForceA, forceB, angForceB
 }
 
+func DetectCollisionCirclePoly(poly *Polygon, circle *Circle) (isColliding bool, mtv rl.Vector2, contacts []rl.Vector2) {
+	n := len(poly.vertices)
+	for i := range n {
+		fmt.Println("Collision Prüfung bei Kante:", i, (i+1)%n)
+		edge := rl.Vector2Subtract(poly.vertices[(i+1)%n], poly.vertices[i])
+		verticeToCircle := rl.Vector2Subtract(circle.basic.location, poly.vertices[i])
+		t := rl.Vector2DotProduct(verticeToCircle, edge) / rl.Vector2DotProduct(edge, edge)
+		if t > 0 && t <= 1 {
+			edge_proj := rl.Vector2Scale(edge, t)
+			lineToContact := rl.Vector2Add(rl.Vector2Scale(verticeToCircle, -1), edge_proj)
+			distSquare := float64(rl.Vector2DotProduct(lineToContact, lineToContact))
+
+			if distSquare <= float64(circle.radius*circle.radius) {
+				//Distanz Kreismittelpunkt kleiner als Kreisradius -> Kollision
+				overlap := float32(math.Sqrt(distSquare)) - circle.radius
+				mtv = rl.Vector2Scale(rl.Vector2Normalize(lineToContact), overlap)
+				contact := rl.Vector2Add(poly.vertices[i], edge_proj)
+				fmt.Println("Collision detected bei Kante:", i, (i+1)%n, mtv, contact)
+				contacts = append(contacts, contact)
+				return true, mtv, contacts
+			}
+		}
+	}
+	return false, rl.Vector2{}, []rl.Vector2{}
+}
+
+func ResolveCollisionCirclePoly(
+	poly *Polygon,
+	circle *Circle,
+	contacts []rl.Vector2,
+	mtv rl.Vector2) (forceA rl.Vector2, angForceA float32, forceB rl.Vector2, angForceB float32) {
+
+	//Positionen der Polygone zurücksetzen
+	resetCirclePolyPositionsBasedOnMass(poly, circle, mtv)
+
+	// danach muss mtv normalisiert werden
+	mtv = rl.Vector2Normalize(mtv)
+
+	//es gibt nur einen Kontaktpunkt
+	collisionpoint := contacts[0]
+
+	//finde relative Vektoren aus der Kollision
+	rAP_perp, rBP_perp, _, velocity_AB := calculateCirclePolyRelativeVectors(poly, circle, collisionpoint)
+
+	// wenn negativ, dann auf Kollisionskurs
+	if rl.Vector2DotProduct(velocity_AB, rl.Vector2Scale(mtv, -1)) < 0 {
+		forceA, angForceA, forceB, angForceB = calculateCirclePolyCollisionForces(poly, circle, mtv, rAP_perp, rBP_perp, velocity_AB)
+	} else {
+		forceA = rl.Vector2{0, 0}
+		angForceA = 0.0
+		forceB = rl.Vector2{0, 0}
+		angForceB = 0.0
+	}
+	return forceA, angForceA, forceB, angForceB
+}
+
+// Dispatcher: ruft die konkrete Detect-Funktion je Typkombination auf.
+func DetectCollision(a, b Shape) (isColliding bool, mtv rl.Vector2, contacts []rl.Vector2) {
+
+	switch shapeA := a.(type) {
+	case *Polygon:
+		switch shapeB := b.(type) {
+		case *Polygon:
+			return DetectCollisionPoly(shapeA, shapeB)
+		case *Circle:
+			return DetectCollisionCirclePoly(shapeA, shapeB)
+		default:
+			return false, rl.Vector2{}, nil
+		}
+
+	case *Circle:
+		switch shapeB := b.(type) {
+		case *Polygon:
+			return DetectCollisionCirclePoly(shapeB, shapeA)
+		case *Circle:
+			// TODO: Implementiere DetectCollCircleCircle(A, B)
+			return false, rl.Vector2{}, nil
+		default:
+			return false, rl.Vector2{}, nil
+		}
+	default:
+		return false, rl.Vector2{}, nil
+	}
+}
+
 // Dispatcher: ruft die konkrete Resolve-Funktion je Typkombination auf.
 func ResolveCollision(
 	a Shape,
@@ -598,39 +731,27 @@ func ResolveCollision(
 ) (rl.Vector2, float32, rl.Vector2, float32) {
 
 	switch shapeA := a.(type) {
-
 	case *Polygon:
 		switch shapeB := b.(type) {
-
 		case *Polygon:
 			return ResolveCollisionPoly(shapeA, shapeB, contacts, mtv)
-
 		case *Circle:
-			// TODO
-			// return ResolveCollPolyCircle(shapeA, shapeB, contacts, mtv)
-			return rl.Vector2{}, 0, rl.Vector2{}, 0
-
+			return ResolveCollisionCirclePoly(shapeA, shapeB, contacts, mtv)
 		default:
 			return rl.Vector2{}, 0, rl.Vector2{}, 0
 		}
-	/*
+
+	case *Circle:
+		switch shapeB := b.(type) {
+		case *Polygon:
+			return ResolveCollisionCirclePoly(shapeB, shapeA, contacts, mtv)
 		case *Circle:
-			switch shapeB := b.(type) {
-
-			case *Polygon:
-				// Achtung: MTV-Richtung evtl. invertieren!
-				// return ResolveCollPolyCircle(shapeB, shapeA, contacts, -mtv)
-				return rl.Vector2{}, 0, rl.Vector2{}, 0
-
-			case *Circle:
-				// TODO
-				// return ResolveCollCircle(shapeA, shapeB, contacts, mtv)
-				return rl.Vector2{}, 0, rl.Vector2{}, 0
-
-			default:
-				return rl.Vector2{}, 0, rl.Vector2{}, 0
-			}
-	*/
+			// TODO
+			// return ResolveCollCircle(shapeA, shapeB, contacts, mtv)
+			return rl.Vector2{}, 0, rl.Vector2{}, 0
+		default:
+			return rl.Vector2{}, 0, rl.Vector2{}, 0
+		}
 
 	default:
 		return rl.Vector2{}, 0, rl.Vector2{}, 0

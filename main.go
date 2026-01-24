@@ -7,7 +7,7 @@ import (
 )
 
 func main() {
-	screenWidth := int32(1200)
+	screenWidth := int32(1400)
 	screenHeight := int32(1000)
 	rl.SetConfigFlags(rl.FlagVsyncHint)
 	rl.InitWindow(screenWidth, screenHeight, "Physics - raylib-go")
@@ -15,12 +15,14 @@ func main() {
 
 	//slice für lib.Shape erstellen
 	shapes := []lib.Shape{}
-	shapes = append(shapes, lib.CreatePolygon(900, 80, 100, 70, false))
-	shapes = append(shapes, lib.CreatePolygon(650, 197, 300, 100, false))
-	shapes = append(shapes, lib.CreatePolygon(350, 500, 1000, 50, true))
-	shapes = append(shapes, lib.CreatePolygon(800, 301, 150, 150, false))
 
-	shapes[2].Rotate(-0.08)
+	shapes = append(shapes, lib.CreatePolygon(350, 700, 1000, 50, true))
+	shapes = append(shapes, lib.CreatePolygon(1000, 80, 100, 400, false))
+	shapes = append(shapes, lib.CreatePolygon(800, 200, 150, 100, false))
+	shapes = append(shapes, lib.CreatePolygon(650, 350, 100, 200, false))
+	shapes = append(shapes, lib.CreateCircle(830, 50, 50, false))
+
+	shapes[0].Rotate(-0.1)
 
 	for !rl.WindowShouldClose() {
 		rl.BeginDrawing()
@@ -38,7 +40,6 @@ func main() {
 				ok, mtv, contacts := lib.DetectCollision(shapes[i], shapes[j])
 				//fmt.Println(ok, mtv, contacts)
 				if ok {
-					//fmt.Println("Kollision!!")
 					forceA, angForcA, forceB, angForceB := lib.ResolveCollision(shapes[i], shapes[j], contacts, mtv)
 					shapes[i].ApplyForce(forceA, angForcA)
 					shapes[j].ApplyForce(forceB, angForceB)
