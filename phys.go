@@ -373,57 +373,36 @@ func updatePolyGroundedMass(polyA, polyB *Polygon, contacts []rl.Vector2, veloci
 	}
 }
 
-func checkPolyGrounded(polyA, polyB *Polygon, contacts []rl.Vector2, VgesamtA, velocityAB rl.Vector2) {
-	// liegen Polygone auf Grund?
-	if len(contacts) > 1 && rl.Vector2Length(velocityAB) < 1.0 && rl.Vector2Length(VgesamtA) < 1.0 {
-		// beide Objekte ruhen
-		polyA.basic.isGrounded = true
-		polyB.basic.isGrounded = true
-	} else {
-		polyA.basic.isGrounded = false
-		polyB.basic.isGrounded = false
-	}
-}
-
-func isPolyGrounded(contacts []rl.Vector2, VgesamtA, velocityAB, mtv rl.Vector2) bool {
+func isPolyGrounded(contacts []rl.Vector2, VgesamtA, velocityAB, mtv rl.Vector2) (isGrounded bool) {
 	// Prüfen, ob die Bedingungen für "Grounded" erfüllt sind
-	isGrounded := len(contacts) > 1 && rl.Vector2Length(velocityAB) < 1.5 && rl.Vector2Length(VgesamtA) < 1.5 && isHorizontal(mtv, rl.Vector2{0, 1})
+	// Zwei Kontakte, geringe Geschwindigkeiten und möglichst horizontale Lage
+	// es reicht wenn VgesamtA und velocity_AB geprüft werden, dann ist VgesamtB zwangsläufig auch klein
+	isGrounded = len(contacts) > 1 && rl.Vector2Length(velocityAB) < 1.5 && rl.Vector2Length(VgesamtA) < 1.5 && isHorizontal(mtv, rl.Vector2{0, 1})
 	return isGrounded
 }
 
-func checkContactStabilityBoth(polyA, polyB *Polygon, contacts []rl.Vector2, mtv rl.Vector2) (
-	ratioA float32,
-	ratioB float32,
-	hasStableContact bool) {
-
-	if len(contacts) < 2 {
-		return 0, 0, false
+func findPolyTop(polyA, polyB *Polygon, mtv rl.Vector2) *Polygon {
+	// mtv geht immer von PolyA zu PolyB
+	if rl.Vector2DotProduct(mtv, rl.Vector2{0, 1}) > 0 {
+		//mtv und gravitiy zeigen in die selbe Richtung, dann PolyA oben
+		return polyA
 	}
+	return polyB
+}
 
-	// Normale der Kollision
+func checkContactStability(poly *Polygon, contacts []rl.Vector2, mtv rl.Vector2) (stable bool) {
+	var ratio float32
 	normal := rl.Vector2Scale(mtv, -1)
-
-	// Für Polygon A analysieren
-	edgeStartA, edgeEndA := findReferenceEdge(polyA.vertices, normal)
-	edgeLengthA := rl.Vector2Distance(edgeStartA, edgeEndA)
+	edgeStart, edgeEnd := findReferenceEdge(poly.vertices, normal)
+	edgeLength := rl.Vector2Distance(edgeStart, edgeEnd)
 	contactDistance := rl.Vector2Distance(contacts[0], contacts[1])
 
-	if edgeLengthA > 0 {
-		ratioA = contactDistance / edgeLengthA
+	if edgeLength > 0 {
+		ratio = contactDistance / edgeLength
 	}
-
-	// Für Polygon B analysieren (inverse Normale)
-	edgeStartB, edgeEndB := findReferenceEdge(polyB.vertices, rl.Vector2Scale(normal, -1))
-	edgeLengthB := rl.Vector2Distance(edgeStartB, edgeEndB)
-
-	if edgeLengthB > 0 {
-		ratioB = contactDistance / edgeLengthB
-	}
-
-	// Hat stabilen Kontakt wenn mindestens eines ein gutes Verhältnis hat
-	hasStableContact = (ratioA > 0.3) || (ratioB > 0.3)
-
-	return ratioA, ratioB, hasStableContact
+	stable = (ratio > 0.3)
+	//fmt.Println("Stability Ratio:", ratio, stable)
+	return stable
 }
 
 func calculatePolyImpulse(
@@ -583,17 +562,20 @@ func ResolveCollisionPoly(
 	//finde relative Vektoren aus der Kollision
 	rAP_perp, rBP_perp, vGesamtA, velocity_AB := calculatePolyRelativeVectors(polyA, polyB, collisionpoint)
 
+	//Prüfe ob Polygon auf Grund gelaufen ist
+	polyTop := findPolyTop(polyA, polyB, mtv)
 	if isPolyGrounded(contacts, vGesamtA, velocity_AB, mtv) {
-		_, _, stable := checkContactStabilityBoth(polyA, polyB, contacts, mtv)
+		//finde von A und B das Polygon, welches oben liegt
+		stable := checkContactStability(polyTop, contacts, mtv)
 		if stable {
-			polyA.basic.isGrounded = true
-			polyB.basic.isGrounded = true
+			polyTop.basic.isGrounded = true
 		}
 
 	} else {
-		polyA.basic.isGrounded = false
-		polyB.basic.isGrounded = false
+		polyTop.basic.isGrounded = false
 	}
+
+	//fmt.Println(polyTop.basic.isGrounded, polyTop.vertices[0])
 
 	// wenn negativ, dann auf Kollisionskurs
 	if rl.Vector2DotProduct(velocity_AB, rl.Vector2Scale(mtv, -1)) < 0 {
