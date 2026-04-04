@@ -1,7 +1,7 @@
 package main
 
 import (
-	"collision/lib"
+	"physics/lib"
 
 	rl "github.com/gen2brain/raylib-go/raylib"
 )
@@ -23,6 +23,7 @@ func main() {
 	shapes = append(shapes, lib.CreateCircle(830, 50, 50, false))
 
 	shapes[0].Rotate(-0.1)
+	shapes[3].Rotate(-0.1)
 
 	for !rl.WindowShouldClose() {
 		rl.BeginDrawing()

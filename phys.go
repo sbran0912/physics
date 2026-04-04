@@ -44,7 +44,7 @@ func CreatePolygon(x float32, y float32, w float32, h float32, wall bool) *Polyg
 
 	if !wall {
 		mass = w * h
-		inertia = mass * (w*w + h*h)
+		inertia = mass * (w*w + h*h) / 2
 	} else {
 		mass = float32(math.MaxFloat32)
 		inertia = float32(math.MaxFloat32)
@@ -73,12 +73,12 @@ func (poly *Polygon) Update() {
 	poly.basic.velocity = rl.Vector2Add(poly.basic.velocity, poly.basic.accel)
 	poly.basic.angVelocity += poly.basic.angAccel
 
-	//poly.basic.velocity = rl.Vector2Scale(poly.basic.velocity, 0.995)
+	poly.basic.velocity = rl.Vector2Scale(poly.basic.velocity, 0.9995)
 	poly.basic.location = rl.Vector2Add(poly.basic.location, poly.basic.velocity)
 	for i := range poly.vertices {
 		poly.vertices[i] = rl.Vector2Add(poly.vertices[i], poly.basic.velocity)
 	}
-	//poly.basic.angVelocity *= 0.995
+	poly.basic.angVelocity *= 0.9995
 	poly.Rotate(poly.basic.angVelocity)
 
 	poly.basic.accel = rl.Vector2{0, 0}
@@ -113,8 +113,12 @@ func (poly *Polygon) ApplyGravity(gravity rl.Vector2) {
 		if !poly.basic.isGrounded {
 			poly.ApplyForce(gravity, 0)
 		} else {
-			//Rückstoß der Kollision wird neutralisiert
-			poly.ApplyForce(rl.Vector2Scale(poly.basic.velocity, -1), poly.basic.angVelocity*-1)
+			// Objekt steht STABIL auf dem Boden.
+			// Dämpfe die Geschwindigkeiten sanft runter (Schlaf-Zustand/Sleeping),
+			// anstatt sie komplett hart auf 0 zu zwingen.
+			dampingForce := rl.Vector2Scale(poly.basic.velocity, -0.5) // Reduziert Veloctiy
+			dampingAngForce := poly.basic.angVelocity * -0.5           // Reduziert Rotation
+			poly.ApplyForce(dampingForce, dampingAngForce)
 		}
 	}
 }
@@ -152,8 +156,11 @@ func (circle *Circle) Update() {
 	circle.basic.velocity = rl.Vector2Add(circle.basic.velocity, circle.basic.accel)
 	circle.basic.angVelocity += circle.basic.angAccel
 
+	circle.basic.velocity = rl.Vector2Scale(circle.basic.velocity, 0.9995)
 	circle.basic.location = rl.Vector2Add(circle.basic.location, circle.basic.velocity)
 	circle.orientation = rl.Vector2Add(circle.orientation, circle.basic.velocity)
+
+	circle.basic.angVelocity *= 0.9995
 	circle.Rotate(circle.basic.angVelocity)
 
 	circle.basic.accel = rl.Vector2{0.0, 0.0}
@@ -622,10 +629,42 @@ func calculateCircleCollisionForces(
 	return forceA, angForceA, forceB, angForceB
 }
 
+func isCenterOfMassSupported(location rl.Vector2, contacts []rl.Vector2, normal rl.Vector2) bool {
+	// Bei weniger als 2 Kontakten kann ein Objekt (meistens) nicht balancieren
+	if len(contacts) < 2 {
+		return false
+	}
+
+	// Tangente zum Boden bilden (senkrecht zur Kollisionsnormale)
+	tangent := rl.Vector2{-normal.Y, normal.X}
+
+	// Schwerpunkt auf diese Achse projizieren
+	comProj := rl.Vector2DotProduct(location, tangent)
+
+	minProj := float32(math.MaxFloat32)
+	maxProj := float32(-math.MaxFloat32)
+
+	// Kontaktpunkte auf die Achse projizieren
+	for _, cp := range contacts {
+		proj := rl.Vector2DotProduct(cp, tangent)
+		if proj < minProj {
+			minProj = proj
+		}
+		if proj > maxProj {
+			maxProj = proj
+		}
+	}
+
+	// Liegt der Schwerpunkt über der Fläche zwischen den äußeren Kontaktpunkten?
+	// Wir geben eine minimale Toleranz (Epsilon), damit Objekte an Kanten etwas früher kippen
+	epsilon := float32(0.5)
+	return comProj >= (minProj-epsilon) && comProj <= (maxProj+epsilon)
+}
+
 // liegt das Polygon beinahe horizontal (mtv / gravity > 0.9)?
 func isHorizontal(mtv rl.Vector2, gravity rl.Vector2) bool {
 	//return rl.FloatEquals(rl.Vector2DotProduct(mtv, gravity), rl.Vector2Length(mtv)*rl.Vector2Length(gravity))
-	result := rl.Vector2DotProduct(mtv, gravity) / rl.Vector2Length(mtv) * rl.Vector2Length(gravity)
+	result := rl.Vector2DotProduct(mtv, gravity) / (rl.Vector2Length(mtv) * rl.Vector2Length(gravity))
 
 	return result > 0.9 || result < -0.9
 }
@@ -670,50 +709,75 @@ func DetectCollisionPoly(polyA, polyB *Polygon) (isColliding bool, mtv rl.Vector
 		return false, rl.Vector2{}, nil
 	}
 }
-
 func ResolveCollisionPoly(
 	polyA *Polygon,
 	polyB *Polygon,
 	contacts []rl.Vector2,
 	mtv rl.Vector2) (forceA rl.Vector2, angForceA float32, forceB rl.Vector2, angForceB float32) {
 
-	//Positionen der Polygone zurücksetzen
+	// Positionen der Polygone zurücksetzen
 	resetPolyPositionsBasedOnMass(polyA, polyB, mtv)
 
-	// danach muss mtv normalisiert werden
+	// Danach muss mtv normalisiert werden
 	mtv = rl.Vector2Normalize(mtv)
 
-	//finde bei zwei Kontaktpunkten den Kollisionspunkt in der Mitte
-	collisionpoint := contacts[0]
+	// Für den Grounded-Check brauchen wir weiterhin einen zentralen Referenzwert
+	// (Wir lassen die Logik für isGrounded intakt, auch wenn wir es vorerst ignorieren)
+	centerCollisionPoint := contacts[0]
 	if len(contacts) > 1 {
-		collisionpoint = rl.Vector2Scale(rl.Vector2Add(contacts[0], contacts[1]), 0.5)
+		centerCollisionPoint = rl.Vector2Scale(rl.Vector2Add(contacts[0], contacts[1]), 0.5)
 	}
 
-	//finde relative Vektoren aus der Kollision
-	rAP_perp, rBP_perp, vGesamtA, velocity_AB := calculatePolyRelativeVectors(polyA, polyB, collisionpoint)
+	// Werte nur für den Grounded-Check berechnen
+	_, _, vGesamtA_center, velocity_AB_center := calculatePolyRelativeVectors(polyA, polyB, centerCollisionPoint)
 
-	//Prüfe ob Polygon auf Grund gelaufen ist
+	// Prüfe ob Polygon auf Grund gelaufen ist
 	polyTop := findPolyTop(polyA, polyB, mtv)
-	if isPolyGrounded(contacts, vGesamtA, velocity_AB, mtv) {
-		//finde von A und B das Polygon, welches oben liegt
-		stable := checkContactStability(polyTop, contacts, mtv)
-		if stable {
+	if isPolyGrounded(contacts, vGesamtA_center, velocity_AB_center, mtv) {
+		// NEU: Prüfen ob der Schwerpunkt über den Kontaktpunkten liegt
+		if isCenterOfMassSupported(polyTop.basic.location, contacts, mtv) {
 			polyTop.basic.isGrounded = true
+		} else {
+			// Schwerpunkt hängt in der Luft -> Es muss kippen!
+			polyTop.basic.isGrounded = false
 		}
-
 	} else {
 		polyTop.basic.isGrounded = false
 	}
 
-	// wenn negativ, dann auf Kollisionskurs
-	if rl.Vector2DotProduct(velocity_AB, rl.Vector2Scale(mtv, -1)) < 0 {
-		forceA, angForceA, forceB, angForceB = calculatePolyCollisionForces(polyA, polyB, mtv, rAP_perp, rBP_perp, velocity_AB)
+	// --- NEU: Impulse für jeden Kontaktpunkt einzeln berechnen ---
+	var sumForceA, sumForceB rl.Vector2
+	var sumAngForceA, sumAngForceB float32
+	var appliedContacts float32 = 0
+
+	// Berechne den Impuls für jeden Kontaktpunkt einzeln
+	for _, cp := range contacts {
+		rAP_perp_cp, rBP_perp_cp, _, velocity_AB_cp := calculatePolyRelativeVectors(polyA, polyB, cp)
+
+		// Prüfe für jeden Punkt individuell, ob er sich auf Kollisionskurs befindet
+		if rl.Vector2DotProduct(velocity_AB_cp, rl.Vector2Scale(mtv, -1)) < 0 {
+			fA, aFA, fB, aFB := calculatePolyCollisionForces(polyA, polyB, mtv, rAP_perp_cp, rBP_perp_cp, velocity_AB_cp)
+			sumForceA = rl.Vector2Add(sumForceA, fA)
+			sumAngForceA += aFA
+			sumForceB = rl.Vector2Add(sumForceB, fB)
+			sumAngForceB += aFB
+			appliedContacts++
+		}
+	}
+
+	// Durchschnitt der angewendeten Impulse bilden
+	if appliedContacts > 0 {
+		forceA = rl.Vector2Scale(sumForceA, 1.0/appliedContacts)
+		angForceA = sumAngForceA / appliedContacts
+		forceB = rl.Vector2Scale(sumForceB, 1.0/appliedContacts)
+		angForceB = sumAngForceB / appliedContacts
 	} else {
 		forceA = rl.Vector2{0, 0}
 		angForceA = 0.0
 		forceB = rl.Vector2{0, 0}
 		angForceB = 0.0
 	}
+
 	return forceA, angForceA, forceB, angForceB
 }
 
