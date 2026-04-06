@@ -13,45 +13,57 @@ func main() {
 	rl.InitWindow(screenWidth, screenHeight, "Physics - raylib-go")
 	defer rl.CloseWindow()
 
-	//slice für lib.Shape erstellen
 	shapes := []lib.Shape{}
 
+	// Boden (unbeweglich)
 	shapes = append(shapes, lib.CreatePolygon(350, 700, 1000, 50, true))
-	shapes = append(shapes, lib.CreatePolygon(1000, 80, 100, 400, false))
-	shapes = append(shapes, lib.CreatePolygon(800, 200, 150, 100, false))
-	shapes = append(shapes, lib.CreatePolygon(650, 350, 100, 200, false))
-	shapes = append(shapes, lib.CreateCircle(830, 50, 50, false))
 
-	shapes[0].Rotate(-0.1)
-	shapes[3].Rotate(-0.1)
+	// Mauer aus gestapelten Blöcken (4 Blöcke übereinander)
+	blockWidth := float32(80)
+	blockHeight := float32(50)
+	startX := float32(800) - blockWidth/2 // zentriert bei x=800
+	baseY := float32(700) - blockHeight   // Bodenoberkante = 700, erster Block sitzt darauf
+
+	for i := range 4 {
+		y := baseY - float32(i)*blockHeight
+		block := lib.CreatePolygon(startX, y, blockWidth, blockHeight, false)
+		shapes = append(shapes, block)
+	}
+
+	// Kreis, der auf die Mauer geschossen wird
+	circle := lib.CreateCircle(400, 600, 40, false)
+	shapes = append(shapes, circle)
+
+	// Einmaliger kräftiger Impuls nach rechts
+	circle.ApplyForce(rl.Vector2{20, 0}, 0)
 
 	for !rl.WindowShouldClose() {
 		rl.BeginDrawing()
 		rl.ClearBackground(rl.DarkBlue)
 
-		// slice p iterieren
+		// Gravität auf alle Objekte anwenden
 		for i := range shapes {
-			//Gravity anwenden
 			shapes[i].ApplyGravity(rl.Vector2{0, 0.4})
+			shapes[i].ClearState()
 		}
 
-		//Kollision für alle elemente des slice prüfen
+		// Kollisionen prüfen und auflösen
 		for i := 0; i < len(shapes)-1; i++ {
 			for j := i + 1; j < len(shapes); j++ {
 				ok, mtv, contacts := lib.DetectCollision(shapes[i], shapes[j])
-				//fmt.Println(ok, mtv, contacts)
 				if ok {
-					forceA, angForcA, forceB, angForceB := lib.ResolveCollision(shapes[i], shapes[j], contacts, mtv)
-					shapes[i].ApplyForce(forceA, angForcA)
+					forceA, angForceA, forceB, angForceB := lib.ResolveCollision(shapes[i], shapes[j], contacts, mtv)
+					shapes[i].ApplyForce(forceA, angForceA)
 					shapes[j].ApplyForce(forceB, angForceB)
 				}
-				//zeichne Kontaktpunkte
+				// Kontaktpunkte zeichnen (optional)
 				for _, contact := range contacts {
 					rl.DrawCircleV(contact, 5, rl.Black)
 				}
-
 			}
 		}
+
+		// Alle Objekte aktualisieren und zeichnen
 		for i := range shapes {
 			shapes[i].Update()
 			shapes[i].Draw(rl.Beige, 3)

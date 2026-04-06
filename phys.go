@@ -1,7 +1,6 @@
 package lib
 
 import (
-	"fmt"
 	"math"
 
 	rl "github.com/gen2brain/raylib-go/raylib"
@@ -14,6 +13,7 @@ type Shape interface {
 	ApplyForce(force rl.Vector2, angForce float32)
 	ResetPos(delta rl.Vector2)
 	ApplyGravity(gravity rl.Vector2)
+	ClearState()
 }
 
 type BasicShape struct {
@@ -113,14 +113,22 @@ func (poly *Polygon) ApplyGravity(gravity rl.Vector2) {
 		if !poly.basic.isGrounded {
 			poly.ApplyForce(gravity, 0)
 		} else {
-			// Objekt steht STABIL auf dem Boden.
-			// Dämpfe die Geschwindigkeiten sanft runter (Schlaf-Zustand/Sleeping),
-			// anstatt sie komplett hart auf 0 zu zwingen.
-			dampingForce := rl.Vector2Scale(poly.basic.velocity, -0.5) // Reduziert Veloctiy
-			dampingAngForce := poly.basic.angVelocity * -0.5           // Reduziert Rotation
-			poly.ApplyForce(dampingForce, dampingAngForce)
+			// NEU: Wenn das Objekt extrem langsam wird, zwinge es komplett zum Stillstand
+			if rl.Vector2Length(poly.basic.velocity) < 0.5 && poly.basic.angVelocity < 0.1 && poly.basic.angVelocity > -0.1 {
+				poly.basic.velocity = rl.Vector2{0, 0}
+				poly.basic.angVelocity = 0
+			} else {
+				// Sonst dämpfe wie bisher
+				dampingForce := rl.Vector2Scale(poly.basic.velocity, -0.5)
+				dampingAngForce := poly.basic.angVelocity * -0.5
+				poly.ApplyForce(dampingForce, dampingAngForce)
+			}
 		}
 	}
+}
+
+func (poly *Polygon) ClearState() {
+	poly.basic.isGrounded = false
 }
 
 func CreateCircle(x float32, y float32, r float32, wall bool) *Circle {
@@ -191,11 +199,18 @@ func (circle *Circle) ApplyGravity(gravity rl.Vector2) {
 		if !circle.basic.isGrounded {
 			circle.ApplyForce(gravity, 0)
 		} else {
-			//Rückstoß der Kollision wird neutralisiert
-			circle.ApplyForce(rl.Vector2Scale(circle.basic.velocity, -1), circle.basic.angVelocity*-1)
+			// Objekt steht STABIL auf dem Boden.
+			// Dämpfe die Geschwindigkeiten sanft runter (Schlaf-Zustand/Sleeping),
+			// anstatt sie komplett hart auf 0 zu zwingen.
+			dampingForce := rl.Vector2Scale(circle.basic.velocity, -0.5) // Reduziert Veloctiy
+			dampingAngForce := circle.basic.angVelocity * -0.5           // Reduziert Rotation
+			circle.ApplyForce(dampingForce, dampingAngForce)
 		}
 	}
+}
 
+func (circle *Circle) ClearState() {
+	circle.basic.isGrounded = false
 }
 
 // Projektionsbereich eines Polygons auf einer Achse
@@ -709,15 +724,25 @@ func DetectCollisionPoly(polyA, polyB *Polygon) (isColliding bool, mtv rl.Vector
 		return false, rl.Vector2{}, nil
 	}
 }
+
 func ResolveCollisionPoly(
 	polyA *Polygon,
 	polyB *Polygon,
 	contacts []rl.Vector2,
 	mtv rl.Vector2) (forceA rl.Vector2, angForceA float32, forceB rl.Vector2, angForceB float32) {
 
-	// Positionen der Polygone zurücksetzen
-	resetPolyPositionsBasedOnMass(polyA, polyB, mtv)
+	// NEU: Statischer Slop (Erlaube 0.5 Pixel Überlappung)
+	slop := float32(0.5)
+	mtvLength := rl.Vector2Length(mtv)
 
+	if mtvLength > slop {
+		// Schiebe die Objekte nur um den Betrag raus, der den Slop überschreitet
+		mtvCorrection := rl.Vector2Scale(rl.Vector2Normalize(mtv), mtvLength-slop)
+		resetPolyPositionsBasedOnMass(polyA, polyB, mtvCorrection)
+	}
+
+	// Danach muss mtv normalisiert werden
+	mtv = rl.Vector2Normalize(mtv)
 	// Danach muss mtv normalisiert werden
 	mtv = rl.Vector2Normalize(mtv)
 
@@ -826,7 +851,6 @@ func ResolveCollisionCirclePoly(
 	// wenn negativ, dann auf Kollisionskurs
 	if rl.Vector2DotProduct(velocity_AB, rl.Vector2Scale(mtv, -1)) < 0 {
 		forceA, angForceA, forceB, angForceB = calculateCirclePolyCollisionForces(poly, circle, mtv, rAP_perp, rBP_perp, velocity_AB)
-		fmt.Println(forceA, angForceA, forceB, angForceB)
 	} else {
 		forceA = rl.Vector2{0, 0}
 		angForceA = 0.0
