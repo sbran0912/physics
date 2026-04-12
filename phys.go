@@ -17,25 +17,25 @@ type Shape interface {
 }
 
 type BasicShape struct {
-	location    rl.Vector2
-	velocity    rl.Vector2
-	angVelocity float32
-	accel       rl.Vector2
-	angAccel    float32
-	mass        float32
-	inertia     float32
-	isGrounded  bool
+	Location    rl.Vector2
+	Velocity    rl.Vector2
+	AngVelocity float32
+	Accel       rl.Vector2
+	AngAccel    float32
+	Mass        float32
+	Inertia     float32
+	IsGrounded  bool
 }
 
 type Polygon struct {
-	basic    BasicShape
-	vertices []rl.Vector2
+	Basic    BasicShape
+	Vertices []rl.Vector2
 }
 
 type Circle struct {
-	basic       BasicShape
-	radius      float32
-	orientation rl.Vector2
+	Basic       BasicShape
+	Radius      float32
+	Orientation rl.Vector2
 }
 
 func CreatePolygon(x float32, y float32, w float32, h float32, wall bool) *Polygon {
@@ -53,74 +53,74 @@ func CreatePolygon(x float32, y float32, w float32, h float32, wall bool) *Polyg
 	vertices := []rl.Vector2{{x, y}, {x + w, y}, {x + w, y + h}, {x, y + h}}
 
 	poly := Polygon{
-		basic: BasicShape{
-			location:   rl.Vector2{x + w/2, y + h/2},
-			mass:       mass,
-			inertia:    inertia,
-			isGrounded: false,
+		Basic: BasicShape{
+			Location:   rl.Vector2{x + w/2, y + h/2},
+			Mass:       mass,
+			Inertia:    inertia,
+			IsGrounded: false,
 		},
-		vertices: vertices,
+		Vertices: vertices,
 	}
 	return &poly
 }
 
 func (poly *Polygon) ApplyForce(force rl.Vector2, angForce float32) {
-	poly.basic.accel = rl.Vector2Add(poly.basic.accel, force)
-	poly.basic.angAccel += angForce
+	poly.Basic.Accel = rl.Vector2Add(poly.Basic.Accel, force)
+	poly.Basic.AngAccel += angForce
 }
 
 func (poly *Polygon) Update() {
-	poly.basic.velocity = rl.Vector2Add(poly.basic.velocity, poly.basic.accel)
-	poly.basic.angVelocity += poly.basic.angAccel
+	poly.Basic.Velocity = rl.Vector2Add(poly.Basic.Velocity, poly.Basic.Accel)
+	poly.Basic.AngVelocity += poly.Basic.AngAccel
 
-	poly.basic.velocity = rl.Vector2Scale(poly.basic.velocity, 0.9995)
-	poly.basic.location = rl.Vector2Add(poly.basic.location, poly.basic.velocity)
-	for i := range poly.vertices {
-		poly.vertices[i] = rl.Vector2Add(poly.vertices[i], poly.basic.velocity)
+	poly.Basic.Velocity = rl.Vector2Scale(poly.Basic.Velocity, 0.9995)
+	poly.Basic.Location = rl.Vector2Add(poly.Basic.Location, poly.Basic.Velocity)
+	for i := range poly.Vertices {
+		poly.Vertices[i] = rl.Vector2Add(poly.Vertices[i], poly.Basic.Velocity)
 	}
-	poly.basic.angVelocity *= 0.9995
-	poly.Rotate(poly.basic.angVelocity)
+	poly.Basic.AngVelocity *= 0.9995
+	poly.Rotate(poly.Basic.AngVelocity)
 
-	poly.basic.accel = rl.Vector2{0, 0}
-	poly.basic.angAccel = 0
+	poly.Basic.Accel = rl.Vector2{0, 0}
+	poly.Basic.AngAccel = 0
 }
 
 func (poly *Polygon) Draw(c rl.Color, thick float32) {
-	n := len(poly.vertices)
+	n := len(poly.Vertices)
 	for i := range n {
-		rl.DrawLineEx(poly.vertices[i], poly.vertices[(i+1)%n], thick, c)
+		rl.DrawLineEx(poly.Vertices[i], poly.Vertices[(i+1)%n], thick, c)
 	}
-	rl.DrawCircleV(poly.basic.location, 5, c)
+	rl.DrawCircleV(poly.Basic.Location, 5, c)
 }
 
 func (poly *Polygon) Rotate(angle float32) {
-	for i := range poly.vertices {
-		relativePos := rl.Vector2Subtract(poly.vertices[i], poly.basic.location)
+	for i := range poly.Vertices {
+		relativePos := rl.Vector2Subtract(poly.Vertices[i], poly.Basic.Location)
 		rotatedPos := rl.Vector2Rotate(relativePos, angle)
-		poly.vertices[i] = rl.Vector2Add(rotatedPos, poly.basic.location)
+		poly.Vertices[i] = rl.Vector2Add(rotatedPos, poly.Basic.Location)
 	}
 }
 
 func (poly *Polygon) ResetPos(delta rl.Vector2) {
-	for i := range poly.vertices {
-		poly.vertices[i] = rl.Vector2Add(poly.vertices[i], delta)
+	for i := range poly.Vertices {
+		poly.Vertices[i] = rl.Vector2Add(poly.Vertices[i], delta)
 	}
-	poly.basic.location = rl.Vector2Add(poly.basic.location, delta)
+	poly.Basic.Location = rl.Vector2Add(poly.Basic.Location, delta)
 }
 
 func (poly *Polygon) ApplyGravity(gravity rl.Vector2) {
-	if poly.basic.mass < math.MaxFloat32 {
-		if !poly.basic.isGrounded {
+	if poly.Basic.Mass < math.MaxFloat32 {
+		if !poly.Basic.IsGrounded {
 			poly.ApplyForce(gravity, 0)
 		} else {
 			// NEU: Wenn das Objekt extrem langsam wird, zwinge es komplett zum Stillstand
-			if rl.Vector2Length(poly.basic.velocity) < 0.5 && poly.basic.angVelocity < 0.1 && poly.basic.angVelocity > -0.1 {
-				poly.basic.velocity = rl.Vector2{0, 0}
-				poly.basic.angVelocity = 0
+			if rl.Vector2Length(poly.Basic.Velocity) < 0.5 && poly.Basic.AngVelocity < 0.1 && poly.Basic.AngVelocity > -0.1 {
+				poly.Basic.Velocity = rl.Vector2{0, 0}
+				poly.Basic.AngVelocity = 0
 			} else {
 				// Sonst dämpfe wie bisher
-				dampingForce := rl.Vector2Scale(poly.basic.velocity, -0.5)
-				dampingAngForce := poly.basic.angVelocity * -0.5
+				dampingForce := rl.Vector2Scale(poly.Basic.Velocity, -0.5)
+				dampingAngForce := poly.Basic.AngVelocity * -0.5
 				poly.ApplyForce(dampingForce, dampingAngForce)
 			}
 		}
@@ -128,7 +128,7 @@ func (poly *Polygon) ApplyGravity(gravity rl.Vector2) {
 }
 
 func (poly *Polygon) ClearState() {
-	poly.basic.isGrounded = false
+	poly.Basic.IsGrounded = false
 }
 
 func CreateCircle(x float32, y float32, r float32, wall bool) *Circle {
@@ -144,73 +144,73 @@ func CreateCircle(x float32, y float32, r float32, wall bool) *Circle {
 	}
 
 	circle := Circle{
-		basic: BasicShape{
-			location: rl.Vector2{x, y},
-			mass:     mass,
-			inertia:  inertia,
+		Basic: BasicShape{
+			Location: rl.Vector2{x, y},
+			Mass:     mass,
+			Inertia:  inertia,
 		},
-		radius:      r,
-		orientation: rl.Vector2{r + x, y},
+		Radius:      r,
+		Orientation: rl.Vector2{r + x, y},
 	}
 	return &circle
 }
 
 func (circle *Circle) ApplyForce(force rl.Vector2, angForce float32) {
-	circle.basic.accel = rl.Vector2Add(circle.basic.accel, force)
-	circle.basic.angAccel += angForce
+	circle.Basic.Accel = rl.Vector2Add(circle.Basic.Accel, force)
+	circle.Basic.AngAccel += angForce
 }
 
 func (circle *Circle) Update() {
-	circle.basic.velocity = rl.Vector2Add(circle.basic.velocity, circle.basic.accel)
-	circle.basic.angVelocity += circle.basic.angAccel
+	circle.Basic.Velocity = rl.Vector2Add(circle.Basic.Velocity, circle.Basic.Accel)
+	circle.Basic.AngVelocity += circle.Basic.AngAccel
 
-	circle.basic.velocity = rl.Vector2Scale(circle.basic.velocity, 0.9995)
-	circle.basic.location = rl.Vector2Add(circle.basic.location, circle.basic.velocity)
-	circle.orientation = rl.Vector2Add(circle.orientation, circle.basic.velocity)
+	circle.Basic.Velocity = rl.Vector2Scale(circle.Basic.Velocity, 0.9995)
+	circle.Basic.Location = rl.Vector2Add(circle.Basic.Location, circle.Basic.Velocity)
+	circle.Orientation = rl.Vector2Add(circle.Orientation, circle.Basic.Velocity)
 
-	circle.basic.angVelocity *= 0.9995
-	circle.Rotate(circle.basic.angVelocity)
+	circle.Basic.AngVelocity *= 0.9995
+	circle.Rotate(circle.Basic.AngVelocity)
 
-	circle.basic.accel = rl.Vector2{0.0, 0.0}
-	circle.basic.angAccel = 0.0
+	circle.Basic.Accel = rl.Vector2{0.0, 0.0}
+	circle.Basic.AngAccel = 0.0
 }
 
 func (circle *Circle) Draw(c rl.Color, thick float32) {
-	rl.DrawRing(circle.basic.location, circle.radius-thick, circle.radius, 0, 360, 1, c)
-	rl.DrawCircleV(circle.basic.location, 3, c)
-	rl.DrawLineEx(circle.basic.location, circle.orientation, thick, c)
+	rl.DrawRing(circle.Basic.Location, circle.Radius-thick, circle.Radius, 0, 360, 1, c)
+	rl.DrawCircleV(circle.Basic.Location, 3, c)
+	rl.DrawLineEx(circle.Basic.Location, circle.Orientation, thick, c)
 }
 
 func (circle *Circle) Rotate(angle float32) {
-	relativePos := rl.Vector2Subtract(circle.orientation, circle.basic.location)
+	relativePos := rl.Vector2Subtract(circle.Orientation, circle.Basic.Location)
 	rotatedPos := rl.Vector2Rotate(relativePos, angle)
-	circle.orientation = rl.Vector2Add(rotatedPos, circle.basic.location)
+	circle.Orientation = rl.Vector2Add(rotatedPos, circle.Basic.Location)
 }
 
 func (circle *Circle) ResetPos(delta rl.Vector2) {
 
-	circle.basic.location = rl.Vector2Add(circle.basic.location, delta)
-	circle.orientation = rl.Vector2Add(circle.orientation, delta)
+	circle.Basic.Location = rl.Vector2Add(circle.Basic.Location, delta)
+	circle.Orientation = rl.Vector2Add(circle.Orientation, delta)
 
 }
 
 func (circle *Circle) ApplyGravity(gravity rl.Vector2) {
-	if circle.basic.mass < math.MaxFloat32 {
-		if !circle.basic.isGrounded {
+	if circle.Basic.Mass < math.MaxFloat32 {
+		if !circle.Basic.IsGrounded {
 			circle.ApplyForce(gravity, 0)
 		} else {
 			// Objekt steht STABIL auf dem Boden.
 			// Dämpfe die Geschwindigkeiten sanft runter (Schlaf-Zustand/Sleeping),
 			// anstatt sie komplett hart auf 0 zu zwingen.
-			dampingForce := rl.Vector2Scale(circle.basic.velocity, -0.5) // Reduziert Veloctiy
-			dampingAngForce := circle.basic.angVelocity * -0.5           // Reduziert Rotation
+			dampingForce := rl.Vector2Scale(circle.Basic.Velocity, -0.5) // Reduziert Veloctiy
+			dampingAngForce := circle.Basic.AngVelocity * -0.5           // Reduziert Rotation
 			circle.ApplyForce(dampingForce, dampingAngForce)
 		}
 	}
 }
 
 func (circle *Circle) ClearState() {
-	circle.basic.isGrounded = false
+	circle.Basic.IsGrounded = false
 }
 
 // Projektionsbereich eines Polygons auf einer Achse
@@ -341,13 +341,13 @@ func transferContactsToA(contacts []rl.Vector2, verticesA []rl.Vector2, normal r
 
 func resetPolyPositionsBasedOnMass(polyA, polyB *Polygon, mtv rl.Vector2) {
 	// Objekte um mtv zurücksetzen basierend auf ihrer Masse
-	if polyA.basic.mass < math.MaxFloat32 {
+	if polyA.Basic.Mass < math.MaxFloat32 {
 		polyA.ResetPos(rl.Vector2Scale(mtv, -0.5))
 	} else {
 		polyB.ResetPos(rl.Vector2Scale(mtv, 0.5))
 	}
 
-	if polyB.basic.mass < math.MaxFloat32 {
+	if polyB.Basic.Mass < math.MaxFloat32 {
 		polyB.ResetPos(rl.Vector2Scale(mtv, 0.5))
 	} else {
 		polyA.ResetPos(rl.Vector2Scale(mtv, -0.5))
@@ -356,13 +356,13 @@ func resetPolyPositionsBasedOnMass(polyA, polyB *Polygon, mtv rl.Vector2) {
 
 func resetCirclePolyPositionsBasedOnMass(poly *Polygon, circle *Circle, mtv rl.Vector2) {
 	// Objekte um mtv zurücksetzen basierend auf ihrer Masse
-	if poly.basic.mass < math.MaxFloat32 {
+	if poly.Basic.Mass < math.MaxFloat32 {
 		poly.ResetPos(rl.Vector2Scale(mtv, -0.5))
 	} else {
 		circle.ResetPos(rl.Vector2Scale(mtv, 0.5))
 	}
 
-	if circle.basic.mass < math.MaxFloat32 {
+	if circle.Basic.Mass < math.MaxFloat32 {
 		circle.ResetPos(rl.Vector2Scale(mtv, 0.5))
 	} else {
 		poly.ResetPos(rl.Vector2Scale(mtv, -0.5))
@@ -371,13 +371,13 @@ func resetCirclePolyPositionsBasedOnMass(poly *Polygon, circle *Circle, mtv rl.V
 
 func resetCirclePositionsBasedOnMass(circleA *Circle, circleB *Circle, mtv rl.Vector2) {
 	// Objekte um mtv zurücksetzen basierend auf ihrer Masse
-	if circleA.basic.mass < math.MaxFloat32 {
+	if circleA.Basic.Mass < math.MaxFloat32 {
 		circleA.ResetPos(rl.Vector2Scale(mtv, -0.5))
 	} else {
 		circleB.ResetPos(rl.Vector2Scale(mtv, 0.5))
 	}
 
-	if circleB.basic.mass < math.MaxFloat32 {
+	if circleB.Basic.Mass < math.MaxFloat32 {
 		circleB.ResetPos(rl.Vector2Scale(mtv, 0.5))
 	} else {
 		circleA.ResetPos(rl.Vector2Scale(mtv, -0.5))
@@ -387,17 +387,17 @@ func resetCirclePositionsBasedOnMass(circleA *Circle, circleB *Circle, mtv rl.Ve
 func calculatePolyRelativeVectors(polyA, polyB *Polygon, collisionPoint rl.Vector2) (rAP_perp, rBP_perp, VgesamtA, velocity_AB rl.Vector2) {
 
 	// Linie von A.location zu Kollisionspunkt
-	rAP := rl.Vector2Subtract(collisionPoint, polyA.basic.location)
+	rAP := rl.Vector2Subtract(collisionPoint, polyA.Basic.Location)
 	// Linie von B.location zu Kollisionspunkt
-	rBP := rl.Vector2Subtract(collisionPoint, polyB.basic.location)
+	rBP := rl.Vector2Subtract(collisionPoint, polyB.Basic.Location)
 
 	rAP_perp = rl.Vector2{-rAP.Y, rAP.X}
 	rBP_perp = rl.Vector2{-rBP.Y, rBP.X}
 
-	VtanA := rl.Vector2Scale(rAP_perp, polyA.basic.angVelocity)
-	VtanB := rl.Vector2Scale(rBP_perp, polyB.basic.angVelocity)
-	VgesamtA = rl.Vector2Add(polyA.basic.velocity, VtanA)
-	VgesamtB := rl.Vector2Add(polyB.basic.velocity, VtanB)
+	VtanA := rl.Vector2Scale(rAP_perp, polyA.Basic.AngVelocity)
+	VtanB := rl.Vector2Scale(rBP_perp, polyB.Basic.AngVelocity)
+	VgesamtA = rl.Vector2Add(polyA.Basic.Velocity, VtanA)
+	VgesamtB := rl.Vector2Add(polyB.Basic.Velocity, VtanB)
 	velocity_AB = rl.Vector2Subtract(VgesamtA, VgesamtB)
 
 	return rAP_perp, rBP_perp, VgesamtA, velocity_AB
@@ -406,17 +406,17 @@ func calculatePolyRelativeVectors(polyA, polyB *Polygon, collisionPoint rl.Vecto
 func calculateCirclePolyRelativeVectors(poly *Polygon, circle *Circle, collisionPoint rl.Vector2) (rAP_perp, rBP_perp, VgesamtA, velocity_AB rl.Vector2) {
 
 	// Linie von A.location zu Kollisionspunkt
-	rAP := rl.Vector2Subtract(collisionPoint, poly.basic.location)
+	rAP := rl.Vector2Subtract(collisionPoint, poly.Basic.Location)
 	// Linie von B.location zu Kollisionspunkt
-	rBP := rl.Vector2Subtract(collisionPoint, circle.basic.location)
+	rBP := rl.Vector2Subtract(collisionPoint, circle.Basic.Location)
 
 	rAP_perp = rl.Vector2{-rAP.Y, rAP.X}
 	rBP_perp = rl.Vector2{-rBP.Y, rBP.X}
 
-	VtanA := rl.Vector2Scale(rAP_perp, poly.basic.angVelocity)
-	VtanB := rl.Vector2Scale(rBP_perp, circle.basic.angVelocity)
-	VgesamtA = rl.Vector2Add(poly.basic.velocity, VtanA)
-	VgesamtB := rl.Vector2Add(circle.basic.velocity, VtanB)
+	VtanA := rl.Vector2Scale(rAP_perp, poly.Basic.AngVelocity)
+	VtanB := rl.Vector2Scale(rBP_perp, circle.Basic.AngVelocity)
+	VgesamtA = rl.Vector2Add(poly.Basic.Velocity, VtanA)
+	VgesamtB := rl.Vector2Add(circle.Basic.Velocity, VtanB)
 	velocity_AB = rl.Vector2Subtract(VgesamtA, VgesamtB)
 
 	return rAP_perp, rBP_perp, VgesamtA, velocity_AB
@@ -426,16 +426,16 @@ func calculateCircleRelativeVectors(circleA *Circle, circleB *Circle, mtv rl.Vec
 
 	// mtv wird auf Radius des jeweiligen Kreises skaliert
 	// Kollisionspunkt ist bei Kreisen nicht relevant, nur der mtv = Normale
-	rA := rl.Vector2Scale(rl.Vector2Normalize(mtv), -circleA.radius)
-	rB := rl.Vector2Scale(rl.Vector2Normalize(mtv), circleB.radius)
+	rA := rl.Vector2Scale(rl.Vector2Normalize(mtv), -circleA.Radius)
+	rB := rl.Vector2Scale(rl.Vector2Normalize(mtv), circleB.Radius)
 
 	rAP_perp = rl.Vector2{-rA.Y, rA.X}
 	rBP_perp = rl.Vector2{-rB.Y, rB.X}
 
-	VtanA := rl.Vector2Scale(rAP_perp, circleA.basic.angVelocity)
-	VtanB := rl.Vector2Scale(rBP_perp, circleB.basic.angVelocity)
-	VgesamtA = rl.Vector2Add(circleA.basic.velocity, VtanA)
-	VgesamtB := rl.Vector2Add(circleB.basic.velocity, VtanB)
+	VtanA := rl.Vector2Scale(rAP_perp, circleA.Basic.AngVelocity)
+	VtanB := rl.Vector2Scale(rBP_perp, circleB.Basic.AngVelocity)
+	VgesamtA = rl.Vector2Add(circleA.Basic.Velocity, VtanA)
+	VgesamtB := rl.Vector2Add(circleB.Basic.Velocity, VtanB)
 	velocity_AB = rl.Vector2Subtract(VgesamtA, VgesamtB)
 
 	return rAP_perp, rBP_perp, VgesamtA, velocity_AB
@@ -445,21 +445,21 @@ func updatePolyGroundedMass(polyA, polyB *Polygon, contacts []rl.Vector2, veloci
 	// liegen Polygone auf Grund?
 	if len(contacts) > 1 && rl.Vector2Length(velocityAB) < 2.0 {
 		// Prüfe ob PolyB eine Wand ist (unendliche Masse/Trägheit)
-		if polyB.basic.mass == math.MaxFloat32 && polyB.basic.inertia == math.MaxFloat32 {
-			polyA.basic.isGrounded = true
+		if polyB.Basic.Mass == math.MaxFloat32 && polyB.Basic.Inertia == math.MaxFloat32 {
+			polyA.Basic.IsGrounded = true
 		} else {
-			polyA.basic.isGrounded = false
+			polyA.Basic.IsGrounded = false
 		}
 
 		// Prüfe ob PolyA eine Wand ist
-		if polyA.basic.mass == math.MaxFloat32 && polyA.basic.inertia == math.MaxFloat32 {
-			polyB.basic.isGrounded = true
+		if polyA.Basic.Mass == math.MaxFloat32 && polyA.Basic.Inertia == math.MaxFloat32 {
+			polyB.Basic.IsGrounded = true
 		} else {
-			polyB.basic.isGrounded = false
+			polyB.Basic.IsGrounded = false
 		}
 	} else {
-		polyA.basic.isGrounded = false
-		polyB.basic.isGrounded = false
+		polyA.Basic.IsGrounded = false
+		polyB.Basic.IsGrounded = false
 	}
 }
 
@@ -483,7 +483,7 @@ func findPolyTop(polyA, polyB *Polygon, mtv rl.Vector2) *Polygon {
 func checkContactStability(poly *Polygon, contacts []rl.Vector2, mtv rl.Vector2) (stable bool) {
 	var ratio float32
 	normal := rl.Vector2Scale(mtv, -1)
-	edgeStart, edgeEnd := findReferenceEdge(poly.vertices, normal)
+	edgeStart, edgeEnd := findReferenceEdge(poly.Vertices, normal)
 	edgeLength := rl.Vector2Distance(edgeStart, edgeEnd)
 	contactDistance := rl.Vector2Distance(contacts[0], contacts[1])
 
@@ -506,11 +506,11 @@ func calculatePolyImpulse(
 
 	jDivLinear := rl.Vector2DotProduct(
 		mtv,
-		rl.Vector2Scale(mtv, (1/polyA.basic.mass+1/polyB.basic.mass)),
+		rl.Vector2Scale(mtv, (1/polyA.Basic.Mass+1/polyB.Basic.Mass)),
 	)
 
-	jDivAngular := float32(math.Pow(float64(rl.Vector2DotProduct(rAP_perp, mtv)), 2))/polyA.basic.inertia +
-		float32(math.Pow(float64(rl.Vector2DotProduct(rBP_perp, mtv)), 2))/polyB.basic.inertia
+	jDivAngular := float32(math.Pow(float64(rl.Vector2DotProduct(rAP_perp, mtv)), 2))/polyA.Basic.Inertia +
+		float32(math.Pow(float64(rl.Vector2DotProduct(rBP_perp, mtv)), 2))/polyB.Basic.Inertia
 
 	return jDenominator / (jDivLinear + jDivAngular)
 }
@@ -528,10 +528,10 @@ func calculateCirclePolyImpulse(
 
 	jDivLinear := rl.Vector2DotProduct(
 		mtv,
-		rl.Vector2Scale(mtv, (1/poly.basic.mass+1/circle.basic.mass)),
+		rl.Vector2Scale(mtv, (1/poly.Basic.Mass+1/circle.Basic.Mass)),
 	)
 	//nur für box
-	jDivAngular := float32(math.Pow(float64(rl.Vector2DotProduct(rAP_perp, mtv)), 2)) / poly.basic.inertia
+	jDivAngular := float32(math.Pow(float64(rl.Vector2DotProduct(rAP_perp, mtv)), 2)) / poly.Basic.Inertia
 
 	return jDenominator / (jDivLinear + jDivAngular)
 }
@@ -549,7 +549,7 @@ func calculateCircleImpulse(
 
 	jDivLinear := rl.Vector2DotProduct(
 		mtv,
-		rl.Vector2Scale(mtv, (1/circleA.basic.mass+1/circleB.basic.mass)),
+		rl.Vector2Scale(mtv, (1/circleA.Basic.Mass+1/circleB.Basic.Mass)),
 	)
 
 	return jDenominator / jDivLinear
@@ -577,12 +577,12 @@ func calculatePolyCollisionForces(
 	j := calculatePolyImpulse(polyA, polyB, mtv, rAP_perp, rBP_perp, velocity_AB, e)
 
 	//kalkuliere Kraft für polyA
-	forceA = rl.Vector2Add(rl.Vector2Scale(mtv, (j/polyA.basic.mass)), rl.Vector2Scale(t, (friction*-j/polyA.basic.mass)))
-	angForceA = rl.Vector2DotProduct(rAP_perp, rl.Vector2Add(rl.Vector2Scale(mtv, j/polyA.basic.inertia), rl.Vector2Scale(t, friction*-j/polyA.basic.inertia)))
+	forceA = rl.Vector2Add(rl.Vector2Scale(mtv, (j/polyA.Basic.Mass)), rl.Vector2Scale(t, (friction*-j/polyA.Basic.Mass)))
+	angForceA = rl.Vector2DotProduct(rAP_perp, rl.Vector2Add(rl.Vector2Scale(mtv, j/polyA.Basic.Inertia), rl.Vector2Scale(t, friction*-j/polyA.Basic.Inertia)))
 
 	//kalkuliere Kraft für polyB
-	forceB = rl.Vector2Add(rl.Vector2Scale(mtv, (-j/polyB.basic.mass)), rl.Vector2Scale(t, (friction*j/polyB.basic.mass)))
-	angForceB = rl.Vector2DotProduct(rBP_perp, rl.Vector2Add(rl.Vector2Scale(mtv, -j/polyB.basic.inertia), rl.Vector2Scale(t, friction*j/polyB.basic.inertia)))
+	forceB = rl.Vector2Add(rl.Vector2Scale(mtv, (-j/polyB.Basic.Mass)), rl.Vector2Scale(t, (friction*j/polyB.Basic.Mass)))
+	angForceB = rl.Vector2DotProduct(rBP_perp, rl.Vector2Add(rl.Vector2Scale(mtv, -j/polyB.Basic.Inertia), rl.Vector2Scale(t, friction*j/polyB.Basic.Inertia)))
 
 	return forceA, angForceA, forceB, angForceB
 }
@@ -603,12 +603,12 @@ func calculateCirclePolyCollisionForces(
 	j := calculateCirclePolyImpulse(poly, circle, mtv, rAP_perp, velocity_AB, e)
 
 	//kalkuliere Kraft für poly
-	forceA = rl.Vector2Add(rl.Vector2Scale(mtv, (j/poly.basic.mass)), rl.Vector2Scale(t, (friction*-j/poly.basic.mass)))
-	angForceA = rl.Vector2DotProduct(rAP_perp, rl.Vector2Add(rl.Vector2Scale(mtv, j/poly.basic.inertia), rl.Vector2Scale(t, friction*-j/poly.basic.inertia)))
+	forceA = rl.Vector2Add(rl.Vector2Scale(mtv, (j/poly.Basic.Mass)), rl.Vector2Scale(t, (friction*-j/poly.Basic.Mass)))
+	angForceA = rl.Vector2DotProduct(rAP_perp, rl.Vector2Add(rl.Vector2Scale(mtv, j/poly.Basic.Inertia), rl.Vector2Scale(t, friction*-j/poly.Basic.Inertia)))
 
 	//kalkuliere Kraft für Circle
-	forceB = rl.Vector2Add(rl.Vector2Scale(mtv, (-j/circle.basic.mass)), rl.Vector2Scale(t, (friction*j/circle.basic.mass)))
-	angForceB = rl.Vector2DotProduct(rBP_perp, rl.Vector2Scale(t, friction*j/circle.basic.inertia))
+	forceB = rl.Vector2Add(rl.Vector2Scale(mtv, (-j/circle.Basic.Mass)), rl.Vector2Scale(t, (friction*j/circle.Basic.Mass)))
+	angForceB = rl.Vector2DotProduct(rBP_perp, rl.Vector2Scale(t, friction*j/circle.Basic.Inertia))
 
 	return forceA, angForceA, forceB, angForceB
 }
@@ -634,12 +634,12 @@ func calculateCircleCollisionForces(
 
 	*/
 	//kalkuliere Kraft für CircleA
-	forceA = rl.Vector2Add(rl.Vector2Scale(mtv, (j/circleA.basic.mass)), rl.Vector2Scale(t, (friction*j/circleA.basic.mass)))
-	angForceA = rl.Vector2DotProduct(rAP_perp, rl.Vector2Scale(t, friction*j/circleA.basic.inertia))
+	forceA = rl.Vector2Add(rl.Vector2Scale(mtv, (j/circleA.Basic.Mass)), rl.Vector2Scale(t, (friction*j/circleA.Basic.Mass)))
+	angForceA = rl.Vector2DotProduct(rAP_perp, rl.Vector2Scale(t, friction*j/circleA.Basic.Inertia))
 
 	//kalkuliere Kraft für CircleB
-	forceB = rl.Vector2Add(rl.Vector2Scale(mtv, (-j/circleB.basic.mass)), rl.Vector2Scale(t, (friction*-j/circleB.basic.mass)))
-	angForceB = rl.Vector2DotProduct(rBP_perp, rl.Vector2Scale(t, friction*-j/circleB.basic.inertia))
+	forceB = rl.Vector2Add(rl.Vector2Scale(mtv, (-j/circleB.Basic.Mass)), rl.Vector2Scale(t, (friction*-j/circleB.Basic.Mass)))
+	angForceB = rl.Vector2DotProduct(rBP_perp, rl.Vector2Scale(t, friction*-j/circleB.Basic.Inertia))
 
 	return forceA, angForceA, forceB, angForceB
 }
@@ -718,11 +718,11 @@ func DetectCollisionPoly(polyA, polyB *Polygon) (isColliding bool, mtv rl.Vector
 	var smallestAxis rl.Vector2
 
 	// Alle Achsen beider Polygone sammeln
-	axes := append(getAxes(polyA.vertices), getAxes(polyB.vertices)...)
+	axes := append(getAxes(polyA.Vertices), getAxes(polyB.Vertices)...)
 
 	for _, axis := range axes {
-		minA, maxA := projectPolygon(polyA.vertices, axis)
-		minB, maxB := projectPolygon(polyB.vertices, axis)
+		minA, maxA := projectPolygon(polyA.Vertices, axis)
+		minB, maxB := projectPolygon(polyB.Vertices, axis)
 
 		overlap := float32(math.Min(float64(maxA), float64(maxB))) - float32(math.Max(float64(minA), float64(minB)))
 		if overlap <= 0 {
@@ -734,7 +734,7 @@ func DetectCollisionPoly(polyA, polyB *Polygon) (isColliding bool, mtv rl.Vector
 			smallestAxis = axis
 
 			// Richtung korrigieren
-			dir := rl.Vector2Subtract(polyB.basic.location, polyA.basic.location)
+			dir := rl.Vector2Subtract(polyB.Basic.Location, polyA.Basic.Location)
 			if rl.Vector2DotProduct(dir, smallestAxis) < 0 {
 				smallestAxis = rl.Vector2Scale(smallestAxis, -1)
 			}
@@ -743,9 +743,9 @@ func DetectCollisionPoly(polyA, polyB *Polygon) (isColliding bool, mtv rl.Vector
 
 	mtv = rl.Vector2Scale(smallestAxis, smallestOverlap)
 
-	rawContacts := findContactPoints(polyA.vertices, polyB.vertices)
+	rawContacts := findContactPoints(polyA.Vertices, polyB.Vertices)
 	// Hinweis: smallestAxis ist bereits normalisiert!
-	contacts = transferContactsToA(rawContacts, polyA.vertices, rl.Vector2Scale(smallestAxis, -1))
+	contacts = transferContactsToA(rawContacts, polyA.Vertices, rl.Vector2Scale(smallestAxis, -1))
 	if len(contacts) > 0 {
 		return true, mtv, contacts
 	} else {
@@ -788,14 +788,14 @@ func ResolveCollisionPoly(
 	polyTop := findPolyTop(polyA, polyB, mtv)
 	if isPolyGrounded(contacts, vGesamtA_center, velocity_AB_center, mtv) {
 		// NEU: Prüfen ob der Schwerpunkt über den Kontaktpunkten liegt
-		if isCenterOfMassSupported(polyTop.basic.location, contacts, mtv) {
-			polyTop.basic.isGrounded = true
+		if isCenterOfMassSupported(polyTop.Basic.Location, contacts, mtv) {
+			polyTop.Basic.IsGrounded = true
 		} else {
 			// Schwerpunkt hängt in der Luft -> Es muss kippen!
-			polyTop.basic.isGrounded = false
+			polyTop.Basic.IsGrounded = false
 		}
 	} else {
-		polyTop.basic.isGrounded = false
+		polyTop.Basic.IsGrounded = false
 	}
 
 	// --- NEU: Impulse für jeden Kontaktpunkt einzeln berechnen ---
@@ -835,16 +835,16 @@ func ResolveCollisionPoly(
 }
 
 func DetectCollisionCirclePoly(poly *Polygon, circle *Circle) (isColliding bool, mtv rl.Vector2, contacts []rl.Vector2) {
-	n := len(poly.vertices)
+	n := len(poly.Vertices)
 	closestDistSq := float32(math.MaxFloat32)
 	var closestPoint rl.Vector2
 	inside := true
 
 	for i := range n {
-		a := poly.vertices[i]
-		b := poly.vertices[(i+1)%n]
+		a := poly.Vertices[i]
+		b := poly.Vertices[(i+1)%n]
 		edge := rl.Vector2Subtract(b, a)
-		toCircle := rl.Vector2Subtract(circle.basic.location, a)
+		toCircle := rl.Vector2Subtract(circle.Basic.Location, a)
 
 		// Check if center is outside this edge (assuming CW and inward normal)
 		normal := rl.Vector2{-edge.Y, edge.X}
@@ -864,7 +864,7 @@ func DetectCollisionCirclePoly(poly *Polygon, circle *Circle) (isColliding bool,
 			currentClosest = rl.Vector2Add(a, rl.Vector2Scale(edge, t))
 		}
 
-		diff := rl.Vector2Subtract(circle.basic.location, currentClosest)
+		diff := rl.Vector2Subtract(circle.Basic.Location, currentClosest)
 		distSq := rl.Vector2DotProduct(diff, diff)
 
 		if distSq < closestDistSq {
@@ -873,7 +873,7 @@ func DetectCollisionCirclePoly(poly *Polygon, circle *Circle) (isColliding bool,
 		}
 	}
 
-	if inside || closestDistSq <= circle.radius*circle.radius {
+	if inside || closestDistSq <= circle.Radius*circle.Radius {
 		// Collision!
 		var axis rl.Vector2
 		var overlap float32
@@ -882,15 +882,15 @@ func DetectCollisionCirclePoly(poly *Polygon, circle *Circle) (isColliding bool,
 			// Center is inside. Find closest EDGE to push out.
 			minOverlap := float32(math.MaxFloat32)
 			for i := range n {
-				a := poly.vertices[i]
-				b := poly.vertices[(i+1)%n]
+				a := poly.Vertices[i]
+				b := poly.Vertices[(i+1)%n]
 				edge := rl.Vector2Subtract(b, a)
 				normal := rl.Vector2Normalize(rl.Vector2{-edge.Y, edge.X})
-				toCircle := rl.Vector2Subtract(circle.basic.location, a)
+				toCircle := rl.Vector2Subtract(circle.Basic.Location, a)
 
 				// dist is inward (positive)
 				dist := rl.Vector2DotProduct(normal, toCircle)
-				overlapVal := dist + circle.radius
+				overlapVal := dist + circle.Radius
 				if overlapVal < minOverlap {
 					minOverlap = overlapVal
 					axis = rl.Vector2Scale(normal, -1) // Push OUT
@@ -899,9 +899,9 @@ func DetectCollisionCirclePoly(poly *Polygon, circle *Circle) (isColliding bool,
 			overlap = minOverlap
 		} else {
 			dist := float32(math.Sqrt(float64(closestDistSq)))
-			overlap = circle.radius - dist
+			overlap = circle.Radius - dist
 			if dist > 1e-6 {
-				axis = rl.Vector2Scale(rl.Vector2Subtract(circle.basic.location, closestPoint), 1.0/dist)
+				axis = rl.Vector2Scale(rl.Vector2Subtract(circle.Basic.Location, closestPoint), 1.0/dist)
 			} else {
 				// Circle center is exactly on a vertex/edge
 				axis = rl.Vector2{0, -1} // Fallback
@@ -944,7 +944,7 @@ func ResolveCollisionCirclePoly(
 	// Check for grounding
 	// mtv points from poly to circle.
 	// Is circle grounded on poly?
-	circle.basic.isGrounded = isCircleGrounded(circle.basic.angVelocity, rl.Vector2Scale(velocity_AB, -1), rl.Vector2Scale(mtv, -1))
+	circle.Basic.IsGrounded = isCircleGrounded(circle.Basic.AngVelocity, rl.Vector2Scale(velocity_AB, -1), rl.Vector2Scale(mtv, -1))
 
 	// wenn negativ, dann auf Kollisionskurs
 	if rl.Vector2DotProduct(velocity_AB, rl.Vector2Scale(mtv, -1)) < 0 {
@@ -960,9 +960,9 @@ func ResolveCollisionCirclePoly(
 
 func DetectCollisionCircle(circleA *Circle, circleB *Circle) (isColliding bool, mtv rl.Vector2, contacts []rl.Vector2) {
 	//Distanz ermitteln
-	collisionLine := rl.Vector2Subtract(circleA.basic.location, circleB.basic.location)
+	collisionLine := rl.Vector2Subtract(circleA.Basic.Location, circleB.Basic.Location)
 	dist := rl.Vector2Length(collisionLine)
-	radiusTotal := circleA.radius + circleB.radius
+	radiusTotal := circleA.Radius + circleB.Radius
 	if dist < radiusTotal {
 		overlap := dist - radiusTotal
 		mtv = rl.Vector2Scale(rl.Vector2Normalize(collisionLine), overlap)
@@ -993,8 +993,8 @@ func ResolveCollisionCircle(
 	rAP_perp, rBP_perp, _, velocity_AB := calculateCircleRelativeVectors(circleA, circleB, mtv)
 
 	// Check for grounding
-	circleA.basic.isGrounded = isCircleGrounded(circleA.basic.angVelocity, velocity_AB, mtv)
-	circleB.basic.isGrounded = isCircleGrounded(circleB.basic.angVelocity, rl.Vector2Scale(velocity_AB, -1), rl.Vector2Scale(mtv, -1))
+	circleA.Basic.IsGrounded = isCircleGrounded(circleA.Basic.AngVelocity, velocity_AB, mtv)
+	circleB.Basic.IsGrounded = isCircleGrounded(circleB.Basic.AngVelocity, rl.Vector2Scale(velocity_AB, -1), rl.Vector2Scale(mtv, -1))
 
 	// wenn negativ, dann auf Kollisionskurs
 	if rl.Vector2DotProduct(velocity_AB, rl.Vector2Scale(mtv, -1)) < 0 {
