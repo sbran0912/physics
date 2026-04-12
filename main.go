@@ -8,34 +8,43 @@ import (
 
 func main() {
 	screenWidth := int32(1400)
-	screenHeight := int32(1000)
+	screenHeight := int32(700)
 	rl.SetConfigFlags(rl.FlagVsyncHint)
 	rl.InitWindow(screenWidth, screenHeight, "Physics - raylib-go")
 	defer rl.CloseWindow()
 
+	// Seed für Zufallszahlen
+
 	shapes := []lib.Shape{}
 
 	// Boden (unbeweglich)
-	shapes = append(shapes, lib.CreatePolygon(350, 700, 1000, 50, true))
+	shapes = append(shapes, lib.CreatePolygon(350, 500, 1000, 50, true))
 
-	// Mauer aus gestapelten Blöcken (4 Blöcke übereinander)
-	blockWidth := float32(80)
-	blockHeight := float32(50)
-	startX := float32(800) - blockWidth/2 // zentriert bei x=800
-	baseY := float32(700) - blockHeight   // Bodenoberkante = 700, erster Block sitzt darauf
+	// Mauer aus 4 gestapelten Blöcken mit zufälliger Breite und Höhe
+	baseX := float32(800)
+	baseY := float32(500)
+	currentY := baseY
 
-	for i := range 4 {
-		y := baseY - float32(i)*blockHeight
-		block := lib.CreatePolygon(startX, y, blockWidth, blockHeight, false)
-		shapes = append(shapes, block)
+	for i := 0; i < 4; i++ {
+		// Breite zwischen 60 und 100
+		blockW := 60 + lib.RandomFloat(0, 40)
+		// Höhe zwischen 35 und 70
+		blockH := 35 + lib.RandomFloat(0, 35)
+		// Zentriert
+		blockX := baseX - blockW/2
+
+		shapes = append(shapes, lib.CreatePolygon(blockX, currentY-blockH, blockW, blockH, false))
+		currentY -= blockH // Für nächsten Block
 	}
 
-	// Kreis, der auf die Mauer geschossen wird
-	circle := lib.CreateCircle(400, 600, 40, false)
-	shapes = append(shapes, circle)
+	// Zwei Kreise
+	circle1 := lib.CreateCircle(400, 400, 42, false)
+	circle2 := lib.CreateCircle(300, 300, 35, false)
+	shapes = append(shapes, circle1, circle2)
 
-	// Einmaliger kräftiger Impuls nach rechts
-	circle.ApplyForce(rl.Vector2{20, 0}, 0)
+	// Einmaliger Impuls nach rechts
+	circle1.ApplyForce(rl.Vector2{10, 0}, 0)
+	circle2.ApplyForce(rl.Vector2{12, 0}, 0)
 
 	for !rl.WindowShouldClose() {
 		rl.BeginDrawing()
@@ -56,10 +65,7 @@ func main() {
 					shapes[i].ApplyForce(forceA, angForceA)
 					shapes[j].ApplyForce(forceB, angForceB)
 				}
-				// Kontaktpunkte zeichnen (optional)
-				for _, contact := range contacts {
-					rl.DrawCircleV(contact, 5, rl.Black)
-				}
+				// Kontaktpunkte zeichnen entfernt (wie in TypeScript)
 			}
 		}
 

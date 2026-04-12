@@ -254,7 +254,7 @@ func pointInPolygon(point rl.Vector2, vertices []rl.Vector2) bool {
 	if n == 0 {
 		return false
 	}
-	for i := 0; i < n; i++ {
+	for i := range n {
 		a := vertices[i]
 		b := vertices[(i+1)%n]
 		edge := rl.Vector2Subtract(b, a)
@@ -684,6 +684,34 @@ func isHorizontal(mtv rl.Vector2, gravity rl.Vector2) bool {
 	return result > 0.9 || result < -0.9
 }
 
+func isCircleGrounded(circleAngVelocity float32, velocity_AB, mtv rl.Vector2) bool {
+	// Überprüfe auf geringe lineare Geschwindigkeit an der Kontaktstelle
+	if rl.Vector2Length(velocity_AB) > 0.5 { // Schwellenwert kann angepasst werden
+		return false
+	}
+
+	// Überprüfe auf geringe Winkelgeschwindigkeit (für rollende Objekte)
+	if math.Abs(float64(circleAngVelocity)) > 0.1 { // Schwellenwert kann angepasst werden
+		return false
+	}
+
+	// Überprüfe, ob die Kollisionsnormale (mtv) generell entgegengesetzt zur Schwerkraft (0,1) zeigt.
+	// mtv zeigt von Objekt A zu Objekt B. Wenn A auf B aufliegt, sollte mtv tendenziell nach oben zeigen.
+	gravity := rl.Vector2{0, 1}
+
+	dot := rl.Vector2DotProduct(mtv, gravity)
+	lenMtv := rl.Vector2Length(mtv)
+	lenGravity := rl.Vector2Length(gravity)
+
+	if lenMtv == 0 || lenGravity == 0 {
+		return false
+	}
+
+	// Ein Wert unter -0.9 bedeutet, dass mtv stark antiparallel zur Schwerkraft ist (also nach oben zeigt).
+	// Dies deutet darauf hin, dass Objekt A auf Objekt B aufliegt.
+	return dot/(lenMtv*lenGravity) < -0.9
+}
+
 // SAT-Kollisionstest
 func DetectCollisionPoly(polyA, polyB *Polygon) (isColliding bool, mtv rl.Vector2, contacts []rl.Vector2) {
 	smallestOverlap := float32(math.MaxFloat32)
@@ -808,26 +836,84 @@ func ResolveCollisionPoly(
 
 func DetectCollisionCirclePoly(poly *Polygon, circle *Circle) (isColliding bool, mtv rl.Vector2, contacts []rl.Vector2) {
 	n := len(poly.vertices)
-	for i := range n {
-		edge := rl.Vector2Subtract(poly.vertices[(i+1)%n], poly.vertices[i])
-		verticeToCircle := rl.Vector2Subtract(circle.basic.location, poly.vertices[i])
-		t := rl.Vector2DotProduct(verticeToCircle, edge) / rl.Vector2DotProduct(edge, edge)
-		if t > 0 && t <= 1 {
-			edge_proj := rl.Vector2Scale(edge, t)
-			lineToContact := rl.Vector2Add(rl.Vector2Scale(verticeToCircle, -1), edge_proj)
-			distSquare := float64(rl.Vector2DotProduct(lineToContact, lineToContact))
+	closestDistSq := float32(math.MaxFloat32)
+	var closestPoint rl.Vector2
+	inside := true
 
-			if distSquare <= float64(circle.radius*circle.radius) {
-				//Distanz Kreismittelpunkt kleiner als Kreisradius -> Kollision
-				overlap := float32(math.Sqrt(distSquare)) - circle.radius
-				mtv = rl.Vector2Scale(rl.Vector2Normalize(lineToContact), overlap)
-				contact := rl.Vector2Add(poly.vertices[i], edge_proj)
-				contacts = append(contacts, contact)
-				return true, mtv, contacts
-			}
+	for i := range n {
+		a := poly.vertices[i]
+		b := poly.vertices[(i+1)%n]
+		edge := rl.Vector2Subtract(b, a)
+		toCircle := rl.Vector2Subtract(circle.basic.location, a)
+
+		// Check if center is outside this edge (assuming CW and inward normal)
+		normal := rl.Vector2{-edge.Y, edge.X}
+		if rl.Vector2DotProduct(normal, toCircle) < 0 {
+			inside = false
+		}
+
+		// Find closest point on segment
+		edgeLenSq := rl.Vector2DotProduct(edge, edge)
+		t := rl.Vector2DotProduct(toCircle, edge) / edgeLenSq
+		var currentClosest rl.Vector2
+		if t <= 0 {
+			currentClosest = a
+		} else if t >= 1 {
+			currentClosest = b
+		} else {
+			currentClosest = rl.Vector2Add(a, rl.Vector2Scale(edge, t))
+		}
+
+		diff := rl.Vector2Subtract(circle.basic.location, currentClosest)
+		distSq := rl.Vector2DotProduct(diff, diff)
+
+		if distSq < closestDistSq {
+			closestDistSq = distSq
+			closestPoint = currentClosest
 		}
 	}
-	return false, rl.Vector2{}, []rl.Vector2{}
+
+	if inside || closestDistSq <= circle.radius*circle.radius {
+		// Collision!
+		var axis rl.Vector2
+		var overlap float32
+
+		if inside {
+			// Center is inside. Find closest EDGE to push out.
+			minOverlap := float32(math.MaxFloat32)
+			for i := range n {
+				a := poly.vertices[i]
+				b := poly.vertices[(i+1)%n]
+				edge := rl.Vector2Subtract(b, a)
+				normal := rl.Vector2Normalize(rl.Vector2{-edge.Y, edge.X})
+				toCircle := rl.Vector2Subtract(circle.basic.location, a)
+
+				// dist is inward (positive)
+				dist := rl.Vector2DotProduct(normal, toCircle)
+				overlapVal := dist + circle.radius
+				if overlapVal < minOverlap {
+					minOverlap = overlapVal
+					axis = rl.Vector2Scale(normal, -1) // Push OUT
+				}
+			}
+			overlap = minOverlap
+		} else {
+			dist := float32(math.Sqrt(float64(closestDistSq)))
+			overlap = circle.radius - dist
+			if dist > 1e-6 {
+				axis = rl.Vector2Scale(rl.Vector2Subtract(circle.basic.location, closestPoint), 1.0/dist)
+			} else {
+				// Circle center is exactly on a vertex/edge
+				axis = rl.Vector2{0, -1} // Fallback
+			}
+		}
+
+		mtv = rl.Vector2Scale(axis, overlap)
+		contacts = append(contacts, closestPoint)
+		return true, mtv, contacts
+	}
+
+	return false, rl.Vector2{}, nil
 }
 
 func ResolveCollisionCirclePoly(
@@ -836,8 +922,15 @@ func ResolveCollisionCirclePoly(
 	contacts []rl.Vector2,
 	mtv rl.Vector2) (forceA rl.Vector2, angForceA float32, forceB rl.Vector2, angForceB float32) {
 
-	//Positionen der Polygone zurücksetzen
-	resetCirclePolyPositionsBasedOnMass(poly, circle, mtv)
+	// NEU: Statischer Slop (Erlaube 0.5 Pixel Überlappung)
+	slop := float32(0.5)
+	mtvLength := rl.Vector2Length(mtv)
+
+	if mtvLength > slop {
+		// Schiebe die Objekte nur um den Betrag raus, der den Slop überschreitet
+		mtvCorrection := rl.Vector2Scale(rl.Vector2Normalize(mtv), mtvLength-slop)
+		resetCirclePolyPositionsBasedOnMass(poly, circle, mtvCorrection)
+	}
 
 	// danach muss mtv normalisiert werden
 	mtv = rl.Vector2Normalize(mtv)
@@ -847,6 +940,11 @@ func ResolveCollisionCirclePoly(
 
 	//finde relative Vektoren aus der Kollision
 	rAP_perp, rBP_perp, _, velocity_AB := calculateCirclePolyRelativeVectors(poly, circle, collisionpoint)
+
+	// Check for grounding
+	// mtv points from poly to circle.
+	// Is circle grounded on poly?
+	circle.basic.isGrounded = isCircleGrounded(circle.basic.angVelocity, rl.Vector2Scale(velocity_AB, -1), rl.Vector2Scale(mtv, -1))
 
 	// wenn negativ, dann auf Kollisionskurs
 	if rl.Vector2DotProduct(velocity_AB, rl.Vector2Scale(mtv, -1)) < 0 {
@@ -878,14 +976,25 @@ func ResolveCollisionCircle(
 	circleB *Circle,
 	mtv rl.Vector2) (forceA rl.Vector2, angForceA float32, forceB rl.Vector2, angForceB float32) {
 
-	//Positionen der Polygone zurücksetzen
-	resetCirclePositionsBasedOnMass(circleA, circleB, mtv)
+	// NEU: Statischer Slop (Erlaube 0.5 Pixel Überlappung)
+	slop := float32(0.5)
+	mtvLength := rl.Vector2Length(mtv)
+
+	if mtvLength > slop {
+		// Schiebe die Objekte nur um den Betrag raus, der den Slop überschreitet
+		mtvCorrection := rl.Vector2Scale(rl.Vector2Normalize(mtv), mtvLength-slop)
+		resetCirclePositionsBasedOnMass(circleA, circleB, mtvCorrection)
+	}
 
 	// danach muss mtv normalisiert werden
 	mtv = rl.Vector2Normalize(mtv)
 
 	//finde relative Vektoren aus der Kollision
 	rAP_perp, rBP_perp, _, velocity_AB := calculateCircleRelativeVectors(circleA, circleB, mtv)
+
+	// Check for grounding
+	circleA.basic.isGrounded = isCircleGrounded(circleA.basic.angVelocity, velocity_AB, mtv)
+	circleB.basic.isGrounded = isCircleGrounded(circleB.basic.angVelocity, rl.Vector2Scale(velocity_AB, -1), rl.Vector2Scale(mtv, -1))
 
 	// wenn negativ, dann auf Kollisionskurs
 	if rl.Vector2DotProduct(velocity_AB, rl.Vector2Scale(mtv, -1)) < 0 {
