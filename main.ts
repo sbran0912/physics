@@ -1,6 +1,6 @@
 // main.ts – analog zu main.go (Port April 2026)
 
-import * as std from "./lib-std.ts";
+import * as std from "./lib-2d.ts";
 import * as phy from "./lib-phys.ts";
 
 const SCREEN_W = 1400;
@@ -34,8 +34,8 @@ function start() {
   shapes.push(circle1, circle2);
 
   // Einmaliger Impuls nach rechts
-  circle1.applyForce(new std.Vector(5, 0), 0);
-  circle2.applyForce(new std.Vector(15, 0), 0);
+  circle1.applyForce(new std.Vector(15, 0), 0);
+  circle2.applyForce(new std.Vector(20, 0), 0);
 }
 
 function draw() {
@@ -70,7 +70,7 @@ function draw() {
   // Update & Draw
   const color = "#F5F0DC"; // Beige-Ersatz
   for (const s of shapes) {
-    s.update();
+    s.update(0.8);
     s.draw(color, 2);
   }
 }
